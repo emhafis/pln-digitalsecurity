@@ -1,55 +1,106 @@
-﻿# syntax=docker/dockerfile:1
+﻿# Stage 1: Build frontend assets
+FROM node:22-alpine AS frontend
 
-FROM composer:2 AS vendor
 WORKDIR /app
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts --ignore-platform-reqs
 
-FROM node:20-alpine AS frontend
-WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+
 COPY . .
-COPY --from=vendor /app/vendor /app/vendor
 RUN npm run build
 
-FROM php:8.3-fpm-bookworm AS app
 
-ARG UID=1000
-ARG GID=1000
+# Stage 2: Install PHP dependencies
+FROM php:8.3-cli-bookworm AS composer-build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    curl \
+RUN apt-get update && apt-get install -y \
     git \
-    libfreetype6-dev \
+    unzip \
+    libzip-dev \
     libicu-dev \
-    libjpeg62-turbo-dev \
     libonig-dev \
     libpng-dev \
-    libxml2-dev \
-    libzip-dev \
-    unzip \
-    zip \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) bcmath gd intl mbstring pdo_mysql zip \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    && docker-php-ext-install \
+        pdo_mysql \
+        mbstring \
+        bcmath \
+        exif \
+        pcntl \
+        gd \
+        zip \
+        intl \
+        opcache \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-COPY docker/php/php.ini /usr/local/etc/php/conf.d/dsms.ini
+COPY composer.json composer.lock ./
+RUN composer install \
+    --no-dev \
+    --prefer-dist \
+    --no-interaction \
+    --no-progress \
+    --no-scripts
 
-COPY --chown=${UID}:${GID} . .
-COPY --from=vendor --chown=${UID}:${GID} /app/vendor ./vendor
-COPY --from=frontend --chown=${UID}:${GID} /app/public/build ./public/build
+COPY . .
 
-RUN mkdir -p storage bootstrap/cache \
-    && chown -R ${UID}:${GID} storage bootstrap/cache \
-    && chmod -R ug+rwX storage bootstrap/cache
+RUN composer dump-autoload --optimize \
+    && php artisan package:discover --ansi
 
-USER ${UID}:${GID}
+
+# Stage 3: Laravel PHP-FPM application
+FROM php:8.3-fpm-bookworm AS app
+
+RUN apt-get update && apt-get install -y \
+    libzip-dev \
+    libicu-dev \
+    libonig-dev \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install \
+        pdo_mysql \
+        mbstring \
+        bcmath \
+        exif \
+        pcntl \
+        gd \
+        zip \
+        intl \
+        opcache \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /var/www/html
+
+COPY --from=composer-build /var/www/html ./
+COPY --from=frontend /app/public/build ./public/build
+
+RUN mkdir -p storage/framework/cache \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache
+
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["entrypoint.sh"]
 
 EXPOSE 9000
+
 CMD ["php-fpm"]
+
+# Stage 4: Nginx web server with built public assets
+FROM nginx:1.28-alpine AS nginx
+
+WORKDIR /var/www/html
+
+COPY --from=frontend /app/public ./public
