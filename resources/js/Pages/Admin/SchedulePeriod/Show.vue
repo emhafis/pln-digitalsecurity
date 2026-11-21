@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
+import { ChevronDownIcon } from '@heroicons/vue/24/outline';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
 import Card from '@/Components/Admin/Card.vue';
@@ -20,6 +21,7 @@ const props = defineProps({
 const securityFilter = ref('');
 const editing = ref(null);
 const confirming = ref(false);
+const detailsOpen = ref(false);
 
 const form = useForm({ shift_id: '', notes: '' });
 
@@ -132,30 +134,132 @@ function statusVariant(status) {
                 untuk menjaga konsistensi jadwal yang sudah tersimpan.
             </div>
 
-            <Card>
-                <table class="w-full text-left">
-                    <tbody>
-                        <tr
-                            v-for="item in info"
-                            :key="item.label"
-                            class="border-b border-gray-100 last:border-0"
-                        >
-                            <th class="w-52 py-2 pr-4 align-top text-xs font-medium text-gray-900">
-                                {{ item.label }}
-                            </th>
-                            <td class="py-2 text-sm text-gray-700">
-                                <Badge
-                                    v-if="item.badge"
-                                    :variant="statusVariant(props.period.status)"
-                                >
-                                    {{ item.value }}
-                                </Badge>
-                                <template v-else>{{ item.value }}</template>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </Card>
+            
+<Card>
+    <button
+        type="button"
+        class="flex w-full items-start justify-between gap-4 text-left"
+        @click="detailsOpen = !detailsOpen"
+    >
+        <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-sm font-semibold text-gray-900">Informasi Periode</h3>
+                <Badge :variant="statusVariant(period.status)">{{ period.status_label }}</Badge>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">
+                {{ period.unit_name }} · {{ period.post_name }} · {{ period.team_name }}
+            </p>
+            <p class="mt-1 text-xs text-gray-500">
+                {{ period.start_date_label }} - {{ period.end_date_label }} · {{ period.members.length }} anggota · {{ period.schedules_count }} jadwal
+            </p>
+        </div>
+        <span class="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-600">
+            {{ detailsOpen ? 'Sembunyikan' : 'Lihat detail' }}
+            <ChevronDownIcon class="h-4 w-4 transition-transform" :class="{ 'rotate-180': detailsOpen }" />
+        </span>
+    </button>
+
+    <div v-if="detailsOpen" class="mt-5 space-y-6 border-t border-gray-100 pt-5">
+        <!-- Periode -->
+        <section>
+            <div class="mb-3">
+                <h3 class="text-sm font-semibold text-gray-900">Informasi Periode</h3>
+                <p class="mt-1 text-xs text-gray-500">Identitas dan masa berlaku periode penjagaan.</p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Nama Periode</p>
+                    <p class="mt-1.5 text-sm font-medium text-gray-900">{{ period.name }}</p>
+                </div>
+
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Status</p>
+                    <div class="mt-1.5">
+                        <Badge :variant="statusVariant(period.status)">{{ period.status_label }}</Badge>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Tanggal Mulai</p>
+                    <p class="mt-1.5 text-sm text-gray-800">{{ period.start_date_label }}</p>
+                </div>
+
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Tanggal Selesai</p>
+                    <p class="mt-1.5 text-sm text-gray-800">{{ period.end_date_label }}</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Penugasan -->
+        <section>
+            <div class="mb-3 border-t border-gray-100 pt-5">
+                <h3 class="text-sm font-semibold text-gray-900">Penugasan</h3>
+                <p class="mt-1 text-xs text-gray-500">Unit, pos jaga, dan regu yang bertugas.</p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Unit</p>
+                    <p class="mt-1.5 text-sm text-gray-800">{{ period.unit_name }}</p>
+                </div>
+
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Pos Jaga</p>
+                    <p class="mt-1.5 text-sm text-gray-800">{{ period.post_name }}</p>
+                </div>
+
+                <div class="border-t border-gray-100 py-3 sm:col-span-2">
+                    <p class="text-xs text-gray-500">Regu</p>
+                    <p class="mt-1.5 text-sm text-gray-800">{{ period.team_name }}</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Ringkasan -->
+        <section>
+            <div class="mb-3 border-t border-gray-100 pt-5">
+                <h3 class="text-sm font-semibold text-gray-900">Ringkasan Aktivitas</h3>
+                <p class="mt-1 text-xs text-gray-500">Data anggota dan jadwal yang telah tercatat.</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="rounded-md border border-gray-200 p-4">
+                    <p class="text-xs text-gray-500">Jumlah Anggota</p>
+                    <p class="mt-2 text-xl font-semibold tabular-nums text-gray-900">{{ period.members.length }}</p>
+                    <p class="mt-1 text-xs text-gray-500">Anggota terdaftar</p>
+                </div>
+
+                <div class="rounded-md border border-gray-200 p-4">
+                    <p class="text-xs text-gray-500">Jadwal Tersimpan</p>
+                    <p class="mt-2 text-xl font-semibold tabular-nums text-gray-900">{{ period.schedules_count }}</p>
+                    <p class="mt-1 text-xs text-gray-500">Jadwal tercatat</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Riwayat -->
+        <section>
+            <div class="mb-3 border-t border-gray-100 pt-5">
+                <h3 class="text-sm font-semibold text-gray-900">Riwayat Data</h3>
+            </div>
+
+            <div class="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Dibuat</p>
+                    <p class="mt-1.5 text-sm text-gray-700">{{ period.created_at }}</p>
+                </div>
+
+                <div class="border-t border-gray-100 py-3">
+                    <p class="text-xs text-gray-500">Diperbarui</p>
+                    <p class="mt-1.5 text-sm text-gray-700">{{ period.updated_at }}</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</Card>
+
 
             <Card>
                 <div class="mb-4 flex items-center justify-between gap-3">
@@ -168,39 +272,41 @@ function statusVariant(status) {
                 </div>
 
                 <div class="overflow-hidden rounded-md border border-gray-200">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">No</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Nama Satpam</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">NIK</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Pola Rotasi</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Siklus</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Offset</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="(member, index) in period.members"
-                                :key="member.id"
-                                class="border-t border-gray-100 odd:bg-white even:bg-gray-50/60"
-                            >
-                                <td class="px-4 py-2.5 text-gray-600">{{ index + 1 }}</td>
-                                <td class="px-4 py-2.5 text-gray-700">{{ member.full_name }}</td>
-                                <td class="px-4 py-2.5 text-gray-600">{{ member.registration_number ?? '-' }}</td>
-                                <td class="px-4 py-2.5 text-gray-600">{{ member.pattern_name ?? 'Tanpa pola' }}</td>
-                                <td class="px-4 py-2.5 text-gray-600">
-                                    {{ member.pattern_cycle_length ? `${member.pattern_cycle_length} hari` : '-' }}
-                                </td>
-                                <td class="px-4 py-2.5 text-gray-600">{{ member.start_offset }}</td>
-                            </tr>
-                            <tr v-if="period.members.length === 0">
-                                <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">
-                                    Belum ada anggota pada snapshot periode ini.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div class="max-h-72 overflow-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="sticky top-0 z-10 bg-gray-50 shadow-[inset_0_-1px_0_#e5e7eb]">
+                                <tr>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">No</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Nama Satpam</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">NIK</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Pola Rotasi</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Siklus</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Offset</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(member, index) in period.members"
+                                    :key="member.id"
+                                    class="border-t border-gray-100 odd:bg-white even:bg-gray-50/60"
+                                >
+                                    <td class="px-4 py-2.5 text-gray-600">{{ index + 1 }}</td>
+                                    <td class="px-4 py-2.5 text-gray-700">{{ member.full_name }}</td>
+                                    <td class="px-4 py-2.5 text-gray-600">{{ member.registration_number ?? '-' }}</td>
+                                    <td class="px-4 py-2.5 text-gray-600">{{ member.pattern_name ?? 'Tanpa pola' }}</td>
+                                    <td class="px-4 py-2.5 text-gray-600">
+                                        {{ member.pattern_cycle_length ? `${member.pattern_cycle_length} hari` : '-' }}
+                                    </td>
+                                    <td class="px-4 py-2.5 text-gray-600">{{ member.start_offset }}</td>
+                                </tr>
+                                <tr v-if="period.members.length === 0">
+                                    <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">
+                                        Belum ada anggota pada snapshot periode ini.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </Card>
 
@@ -235,58 +341,60 @@ function statusVariant(status) {
 
                 <InputError :messages="form.errors?.schedule" class="mb-3" />
 
-                <div class="overflow-x-auto rounded-md border border-gray-200">
-                    <table class="w-full min-w-[720px] text-left text-sm">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Tanggal</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Satpam</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Shift</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Sumber</th>
-                                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Terakhir Diubah</th>
-                                <th v-if="!isLocked" class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                                    <span class="sr-only">Aksi</span>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="row in filteredSchedules"
-                                :key="row.id"
-                                class="border-t border-gray-100 odd:bg-white even:bg-gray-50/60"
-                            >
-                                <td class="px-4 py-2.5 text-gray-700">{{ row.date_label }}</td>
-                                <td class="px-4 py-2.5 text-gray-700">{{ row.full_name }}</td>
-                                <td class="px-4 py-2.5 text-gray-700">
-                                    {{ row.shift_name ?? '-' }}
-                                    <span v-if="row.shift_time" class="block text-xs text-gray-500">{{ row.shift_time }}</span>
-                                </td>
-                                <td class="px-4 py-2.5">
-                                    <Badge :variant="row.source === 'adjustment' ? 'amber' : 'gray'">
-                                        {{ row.source === 'adjustment' ? 'Penyesuaian' : 'Dihasilkan Sistem' }}
-                                    </Badge>
-                                    <span v-if="row.notes" class="mt-1 block text-xs text-gray-500">{{ row.notes }}</span>
-                                </td>
-                                <td class="px-4 py-2.5 text-xs text-gray-600">
-                                    <template v-if="row.updated_by_name">
-                                        {{ row.updated_by_name }}
-                                        <span class="block text-gray-500">{{ row.updated_at }}</span>
-                                    </template>
-                                    <template v-else>-</template>
-                                </td>
-                                <td v-if="!isLocked" class="px-4 py-2.5 text-right">
-                                    <Button variant="secondary" @click="openEdit(row)">
-                                        Edit<span class="sr-only"> jadwal {{ row.full_name }} {{ row.date_label }}</span>
-                                    </Button>
-                                </td>
-                            </tr>
-                            <tr v-if="filteredSchedules.length === 0">
-                                <td :colspan="isLocked ? 5 : 6" class="px-4 py-8 text-center text-sm text-gray-500">
-                                    Belum ada jadwal tersimpan.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="overflow-hidden rounded-md border border-gray-200">
+                    <div class="max-h-[28rem] overflow-auto">
+                        <table class="w-full min-w-[720px] text-left text-sm">
+                            <thead class="sticky top-0 z-10 bg-gray-50 shadow-[inset_0_-1px_0_#e5e7eb]">
+                                <tr>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Tanggal</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Satpam</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Shift</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Sumber</th>
+                                    <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Terakhir Diubah</th>
+                                    <th v-if="!isLocked" class="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                        <span class="sr-only">Aksi</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="row in filteredSchedules"
+                                    :key="row.id"
+                                    class="border-t border-gray-100 odd:bg-white even:bg-gray-50/60"
+                                >
+                                    <td class="px-4 py-2.5 text-gray-700">{{ row.date_label }}</td>
+                                    <td class="px-4 py-2.5 text-gray-700">{{ row.full_name }}</td>
+                                    <td class="px-4 py-2.5 text-gray-700">
+                                        {{ row.shift_name ?? '-' }}
+                                        <span v-if="row.shift_time" class="block text-xs text-gray-500">{{ row.shift_time }}</span>
+                                    </td>
+                                    <td class="px-4 py-2.5">
+                                        <Badge :variant="row.source === 'adjustment' ? 'amber' : 'gray'">
+                                            {{ row.source === 'adjustment' ? 'Penyesuaian' : 'Dihasilkan Sistem' }}
+                                        </Badge>
+                                        <span v-if="row.notes" class="mt-1 block text-xs text-gray-500">{{ row.notes }}</span>
+                                    </td>
+                                    <td class="px-4 py-2.5 text-xs text-gray-600">
+                                        <template v-if="row.updated_by_name">
+                                            {{ row.updated_by_name }}
+                                            <span class="block text-gray-500">{{ row.updated_at }}</span>
+                                        </template>
+                                        <template v-else>-</template>
+                                    </td>
+                                    <td v-if="!isLocked" class="px-4 py-2.5 text-right">
+                                        <Button variant="secondary" @click="openEdit(row)">
+                                            Edit<span class="sr-only"> jadwal {{ row.full_name }} {{ row.date_label }}</span>
+                                        </Button>
+                                    </td>
+                                </tr>
+                                <tr v-if="filteredSchedules.length === 0">
+                                    <td :colspan="isLocked ? 5 : 6" class="px-4 py-8 text-center text-sm text-gray-500">
+                                        Belum ada jadwal tersimpan.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </Card>
         </div>

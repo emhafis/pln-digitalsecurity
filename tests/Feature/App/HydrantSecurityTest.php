@@ -7,6 +7,7 @@ use App\Models\HydrantInspection;
 use App\Models\Security;
 use App\Models\Unit;
 use App\Models\User;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Feature\Scheduling\SchedulingTestCase;
@@ -271,6 +272,22 @@ class HydrantSecurityTest extends SchedulingTestCase
             ->where('hydrant.photo_url', null)
             ->where('latestInspection', null)
         );
+    }
+
+    public function test_hydrant_photo_url_is_relative_to_the_current_host(): void
+    {
+        Storage::fake('public');
+        $unit = $this->createUnit();
+        $security = $this->createSecurity($unit, 'Petugas Foto');
+        $hydrant = $this->createHydrant($unit, ['photo' => 'hydrant-photos/foto.jpg']);
+        Storage::disk('public')->put('hydrant-photos/foto.jpg', 'dummy');
+
+        $this->actingAs($security->user)
+            ->get('/app/hydrant/'.$hydrant->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('hydrant.photo_url', '/storage/hydrant-photos/foto.jpg')
+            );
     }
 
     public function test_latest_inspection_info_is_shown_when_available(): void

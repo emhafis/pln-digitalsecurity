@@ -55,8 +55,8 @@ const initials = (props.security?.full_name || props.user?.name || '?')
                 <!-- Header -->
                 <section class="rounded-xl border border-[#E8E8EC] bg-white p-4">
                     <div class="flex items-center gap-3">
-                        <div v-if="security.photo" class="h-14 w-14 overflow-hidden rounded-full">
-                            <img :src="security.photo" alt="Foto profil" class="h-full w-full object-cover" />
+                        <div v-if="security.photo_url" class="h-14 w-14 overflow-hidden rounded-full">
+                            <img :src="security.photo_url" alt="Foto profil" class="h-full w-full object-cover" />
                         </div>
                         <div v-else class="flex h-14 w-14 items-center justify-center rounded-full bg-[#E8F0F6] text-sm font-semibold text-[#1D567F]">
                             {{ initials }}

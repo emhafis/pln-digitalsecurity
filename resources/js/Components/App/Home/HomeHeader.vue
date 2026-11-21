@@ -13,7 +13,7 @@ function logout() {
 
 const org = 'PLN UID ACEH';
 const role = 'Satpam';
-const avatar = '/images/app/avatar-placeholder.png';
+const avatar = computed(() => props.security?.photo_url || '/images/app/avatar-placeholder.png');
 
 const displayName = computed(() => props.security?.full_name?.trim() || 'Satpam');
 
@@ -42,11 +42,13 @@ function onImageError(event) {
 <template>
     <section class="relative h-[280px] overflow-hidden bg-[#1D567F]">
         <img
-            src="/images/app/home-header-bg.png"
+            src="/images/home-bg-1.jfif"
             alt=""
-            class="absolute inset-0 h-full w-full object-cover"
+            class="absolute inset-0 h-full w-full object-cover brightness-[.72] saturate-[.9]"
             @error="onImageError"
         />
+
+        <div class="absolute inset-0 bg-gradient-to-b from-black/45 via-black/20 to-black/40"></div>
 
         <div class="relative z-10 px-6 pt-8">
             <!-- Instansi dan Logout -->
@@ -70,10 +72,10 @@ function onImageError(event) {
             </div>
 
             <!-- Profil Pengguna -->
-            <div class="mt-9 flex items-center gap-4">
+            <div class="mt-9 flex items-center gap-4 [text-shadow:0_1px_3px_rgba(0,0,0,.45)]">
 
                 <!-- Avatar -->
-                <div class="flex h-[58px] w-[58px] shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white/30 bg-white text-lg font-semibold text-[#1D567F]">
+                <div class="flex h-[58px] w-[58px] shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white/30 bg-white text-lg font-semibold text-[#1D567F] shadow-[0_2px_8px_rgba(0,0,0,.2)] [text-shadow:none]">
                     <img
                         :src="avatar"
                         alt=""

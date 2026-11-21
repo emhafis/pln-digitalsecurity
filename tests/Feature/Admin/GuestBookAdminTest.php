@@ -170,13 +170,13 @@ class GuestBookAdminTest extends TestCase
 
     public function test_private_file_requires_authorization_and_serves(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->makeUnit('U');
         $other = $this->makeUnit('O');
         $admin = $this->makeAdmin($other);
         $sa = $this->makeSuperadmin();
         $path = 'guest-book/selfie/'.$unit->id.'/test.jpg';
-        Storage::disk('local')->put($path, 'imgdata');
+        Storage::disk('public')->put($path, 'imgdata');
         $visit = $this->makeVisit($unit, ['selfie_path' => $path]);
 
         $this->actingAs($admin)->get("/admin/guest-book/{$visit->id}/file/selfie")->assertStatus(403);

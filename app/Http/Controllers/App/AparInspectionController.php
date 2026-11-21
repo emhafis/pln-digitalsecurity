@@ -96,11 +96,11 @@ class AparInspectionController extends Controller
         }
 
         $path = AssetInspectionPhotoStorage::normalizePath($photoModel->photo_path);
-        if ($path === null || ! AssetInspectionPhotoStorage::isManagedPath($path) || ! Storage::disk('local')->exists($path)) {
+        if ($path === null || ! AssetInspectionPhotoStorage::isManagedPath($path) || ! Storage::disk('public')->exists($path)) {
             abort(404);
         }
 
-        return Storage::disk('local')->response($path);
+        return Storage::disk('public')->response($path);
     }
 
     private function findOwnedApar(Request $request, int $id): Apar
@@ -213,7 +213,7 @@ class AparInspectionController extends Controller
             'photos' => $inspection->photos->map(fn ($photo) => [
                 'id' => $photo->id,
                 'caption' => $photo->caption,
-                'url' => route('app.apar.inspections.photo', $photo->id),
+                'url' => '/storage/' . $photo->photo_path,
             ])->values(),
         ];
     }

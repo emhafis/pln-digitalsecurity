@@ -1,0 +1,16 @@
+﻿/.git
+/node_modules
+/vendor
+/storage/*.key
+/storage/logs/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/bootstrap/cache/*
+/public/build
+/.env
+/.env.*
+/docs
+/tests
+/tmp_routes.json
+/tmp_check.py

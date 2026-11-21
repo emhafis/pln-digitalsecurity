@@ -708,6 +708,29 @@ class SchedulePeriodController extends Controller
     }
 
     /**
+     * Update schedule period status inline from list.
+     */
+    public function updateStatus(Request $request, int $id): RedirectResponse
+    {
+        $period = SchedulePeriod::findOrFail($id);
+        $this->authorizeScope($request, $period);
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::in($this->statuses())],
+        ]);
+
+        if ($validated['status'] === $period->status) {
+            return back();
+        }
+
+        $period->update([
+            'status' => $validated['status'],
+        ]);
+
+        return back()->with('success', 'Status periode jadwal berhasil diperbarui.');
+    }
+
+    /**
      * Update an existing schedule period.
      */
     public function update(Request $request, int $id): RedirectResponse

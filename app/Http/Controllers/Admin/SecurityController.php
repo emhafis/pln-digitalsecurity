@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Security;
 use App\Models\Unit;
 use App\Models\User;
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -343,16 +344,14 @@ class SecurityController extends Controller
     private function storeFile(UploadedFile $file, Security $security, string $field): string
     {
         $extension = \App\Support\UploadFilename::extensionFromUpload($file, 'jpg');
-        $reg = $security->registration_number ?: $security->id;
-        $name = $security->full_name ?: 'PERSONEL';
+        $name = \App\Support\UploadFilename::short($security->full_name ?: 'PERSONEL', 12);
 
         if ($field === 'kta_file') {
             $directory = 'KTA';
-            $kta = $security->kta_number ?: $reg;
-            $filename = \App\Support\UploadFilename::make(['FILE-KTA', $kta, $name], $extension);
+            $filename = \App\Support\UploadFilename::dated(['KTA', $name], $extension);
         } else {
             $directory = 'security-photos';
-            $filename = \App\Support\UploadFilename::make(['FOTO-PERSONEL', $reg, $name], $extension);
+            $filename = \App\Support\UploadFilename::dated(['PERSONEL', $name], $extension);
         }
 
         $stored = $file->storeAs($directory, $filename, 'public');
@@ -464,11 +463,11 @@ class SecurityController extends Controller
             'birth_date' => $security->birth_date?->format('Y-m-d'),
             'kta_number' => $security->kta_number,
             'kta_file' => $security->kta_file,
-            'kta_file_url' => $security->kta_file ? Storage::disk('public')->url($security->kta_file) : null,
+            'kta_file_url' => PublicStorageUrl::for($security->kta_file),
             'kta_issued_date' => $security->kta_issued_date?->format('Y-m-d'),
             'kta_expired_date' => $security->kta_expired_date?->format('Y-m-d'),
             'photo' => $security->photo,
-            'photo_url' => $security->photo ? Storage::disk('public')->url($security->photo) : null,
+            'photo_url' => PublicStorageUrl::for($security->photo),
             'username' => $security->user?->username,
             'user_id' => $security->user_id,
             'unit_id' => $security->user?->unit_id,

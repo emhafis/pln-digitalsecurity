@@ -4,6 +4,7 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\Security;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
@@ -27,7 +28,9 @@ class ProfileController extends Controller
 
         return Inertia::render('App/Profile/Index', [
             'user' => $user,
-            'security' => $security,
+            'security' => array_merge($security->toArray(), [
+                'photo_url' => PublicStorageUrl::for($security->photo),
+            ]),
             'unit' => $user->unit,
             'membership' => $membership,
         ]);

@@ -252,14 +252,14 @@ class HydrantInspectionHistoryTest extends SchedulingTestCase
 
     public function test_authorized_user_can_access_inspection_photo(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->createUnit();
         $security = $this->createSecurity($unit);
         $hydrant = $this->createHydrant($unit);
         $inspection = $this->createInspection($hydrant, $security);
 
         $path = AssetInspectionPhotoStorage::directory('hydrant', (int) $hydrant->id).'/'.Str::uuid().'.jpg';
-        Storage::disk('local')->put($path, 'fake-image-bytes');
+        Storage::disk('public')->put($path, 'fake-image-bytes');
         $photo = $this->attachPhoto($inspection, $path);
 
         $response = $this->actingAs($security->user)->get("/app/hydrant/inspection-photos/{$photo->id}");
@@ -270,7 +270,7 @@ class HydrantInspectionHistoryTest extends SchedulingTestCase
 
     public function test_unauthorized_user_cannot_access_inspection_photo(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->createUnit();
         $other = $this->createUnit();
         $security = $this->createSecurity($unit);
@@ -279,7 +279,7 @@ class HydrantInspectionHistoryTest extends SchedulingTestCase
         $inspection = $this->createInspection($hydrant, $otherSecurity);
 
         $path = AssetInspectionPhotoStorage::directory('hydrant', (int) $hydrant->id).'/'.Str::uuid().'.jpg';
-        Storage::disk('local')->put($path, 'secret');
+        Storage::disk('public')->put($path, 'secret');
         $photo = $this->attachPhoto($inspection, $path);
 
         $this->actingAs($security->user)->get("/app/hydrant/inspection-photos/{$photo->id}")->assertNotFound();
@@ -290,13 +290,13 @@ class HydrantInspectionHistoryTest extends SchedulingTestCase
 
     public function test_photo_endpoint_rejects_arbitrary_or_unmanaged_paths(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->createUnit();
         $security = $this->createSecurity($unit);
         $hydrant = $this->createHydrant($unit);
         $inspection = $this->createInspection($hydrant, $security);
 
-        Storage::disk('local')->put('secrets/config.txt', 'top-secret');
+        Storage::disk('public')->put('secrets/config.txt', 'top-secret');
         $photo = $this->attachPhoto($inspection, 'secrets/config.txt');
 
         $this->actingAs($security->user)->get("/app/hydrant/inspection-photos/{$photo->id}")->assertNotFound();

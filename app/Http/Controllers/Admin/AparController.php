@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\AuthorizesAssetAccess;
 use App\Http\Controllers\Controller;
 use App\Models\Apar;
 use App\Models\Unit;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -125,11 +126,8 @@ class AparController extends Controller
             : true;
 
         $photoPath = null;
-        if ($request->hasFile('photo')) {
-            $photoPath = $this->storeAparPhoto($request->file('photo'));
-        }
 
-        DB::transaction(function () use ($validated, $isActive, &$photoPath) {
+        DB::transaction(function () use ($request, $validated, $isActive, &$photoPath) {
             $apar = Apar::query()->create([
                 'unit_id' => (int) $validated['unit_id'],
                 'apar_code' => 'TMP-'.Str::uuid()->toString(),
@@ -144,24 +142,15 @@ class AparController extends Controller
                 'expiry_date' => $validated['expiry_date'] ?? null,
                 'qr_code' => Str::uuid()->toString(),
                 'is_active' => $isActive,
-                'photo' => $photoPath,
+                'photo' => null,
             ]);
 
             $apar->apar_code = $this->generateCode($apar->id);
 
-            $currentPhoto = $photoPath;
-            if ($currentPhoto !== null && is_string($currentPhoto) && $currentPhoto !== '' && str_starts_with(str_replace('\\', '/', $currentPhoto), 'apar-photos/')) {
-                $dir = pathinfo($currentPhoto, PATHINFO_DIRNAME);
-                $ext = pathinfo($currentPhoto, PATHINFO_EXTENSION) ?: 'jpg';
-                $newName = \App\Support\UploadFilename::make(['FOTO-APAR', $apar->apar_code, $apar->placement], $ext);
-                $newPath = ($dir === '.' ? 'apar-photos' : str_replace('\\', '/', $dir)).'/'.$newName;
-                if ($newPath !== $currentPhoto && Storage::disk('public')->exists($currentPhoto)) {
-                    if (Storage::disk('public')->move($currentPhoto, $newPath)) {
-                        $currentPhoto = $newPath;
-                    }
-                }
+            if ($request->hasFile('photo')) {
+                $photoPath = $this->storeAparPhoto($request->file('photo'), $apar->apar_code, $apar->placement);
             }
-            $photoPath = $currentPhoto;
+
             $apar->photo = $photoPath;
             $apar->save();
         });
@@ -229,13 +218,11 @@ class AparController extends Controller
         $removePhoto = filter_var($validated['remove_photo'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if ($request->hasFile('photo')) {
-            $ext = \App\Support\UploadFilename::extensionFromUpload($request->file('photo'), 'jpg');
-            $name = \App\Support\UploadFilename::make(['FOTO-APAR', $apar->apar_code, $validated['placement'] ?? $apar->placement], $ext);
-            $stored = $request->file('photo')->storeAs('apar-photos', $name, 'public');
-            if ($stored === false) {
-                throw ValidationException::withMessages(['photo' => 'Gagal menyimpan foto APAR.']);
-            }
-            $newPhotoPath = $stored;
+            $newPhotoPath = $this->storeAparPhoto(
+                $request->file('photo'),
+                $apar->apar_code,
+                $validated['placement'] ?? $apar->placement
+            );
         } elseif ($removePhoto) {
             $newPhotoPath = null;
         }
@@ -359,10 +346,14 @@ class AparController extends Controller
     /**
      * Store APAR master photo on public disk and return stored path.
      */
-    private function storeAparPhoto($file): string
+    private function storeAparPhoto($file, ?string $aparCode = null, ?string $placement = null): string
     {
         $ext = \App\Support\UploadFilename::extensionFromUpload($file, 'jpg');
-        $filename = \App\Support\UploadFilename::make(['FOTO-APAR'], $ext);
+        $filename = \App\Support\UploadFilename::dated([
+            'FOTO-APAR',
+            \App\Support\UploadFilename::short($aparCode ?? '', 12),
+            \App\Support\UploadFilename::short($placement ?? '', 12),
+        ], $ext);
         $path = $file->storeAs('apar-photos', $filename, 'public');
         if ($path === false) {
             throw ValidationException::withMessages(['photo' => 'Gagal menyimpan foto APAR.']);
@@ -421,7 +412,7 @@ class AparController extends Controller
             'expiry_date' => $apar->expiry_date?->format('Y-m-d'),
             'qr_code' => $apar->qr_code,
             'is_active' => (bool) $apar->is_active,
-            'photo_url' => $apar->photo ? Storage::disk('public')->url($apar->photo) : null,
+            'photo_url' => PublicStorageUrl::for($apar->photo),
             'unit_id' => $apar->unit_id,
             'unit_name' => $apar->unit?->unit_name ?? '-',
             'created_at' => $apar->created_at?->format('d M Y, H:i'),
@@ -450,7 +441,7 @@ class AparController extends Controller
             'recharge_date' => $apar->recharge_date?->format('Y-m-d'),
             'expiry_date' => $apar->expiry_date?->format('Y-m-d'),
             'is_active' => (bool) $apar->is_active,
-            'photo_url' => $apar->photo ? Storage::disk('public')->url($apar->photo) : null,
+            'photo_url' => PublicStorageUrl::for($apar->photo),
             'qr_code' => $apar->qr_code,
         ];
     }

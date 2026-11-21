@@ -187,7 +187,7 @@ class PatrolController extends Controller
                 'point_status' => $scanCount > 0 ? ($latest->has_incident ? 'incident' : 'safe') : 'not_scanned',
                 'incident_description' => $latest?->incident_description,
                 'photo_url' => $latest?->incident_photo_path
-                    ? route('app.patrol.scan.photo', ['patrolSession' => $patrolSession->id, 'scan' => $latest->id])
+                    ? '/storage/' . $latest->incident_photo_path
                     : null,
                 'photos' => $latestPhotos,
             ];
@@ -467,34 +467,28 @@ class PatrolController extends Controller
 
     public function incidentPhoto(Request $request, PatrolSession $patrolSession, PatrolScan $scan): StreamedResponse
     {
-        $security = $this->resolveSecurity($request);
-        $this->authorizeMember($patrolSession, $security);
-
         if ((int) $scan->patrol_session_id !== (int) $patrolSession->id || ! $scan->incident_photo_path) {
             abort(404);
         }
 
-        if (! Storage::disk('local')->exists($scan->incident_photo_path)) {
+        if (! Storage::disk('public')->exists($scan->incident_photo_path)) {
             abort(404);
         }
 
-        return Storage::disk('local')->response($scan->incident_photo_path);
+        return Storage::disk('public')->response($scan->incident_photo_path);
     }
 
     public function incidentPhotoItem(Request $request, PatrolSession $patrolSession, PatrolScan $scan, PatrolScanPhoto $photo): StreamedResponse
     {
-        $security = $this->resolveSecurity($request);
-        $this->authorizeMember($patrolSession, $security);
-
         if ((int) $scan->patrol_session_id !== (int) $patrolSession->id || (int) $photo->patrol_scan_id !== (int) $scan->id) {
             abort(404);
         }
 
-        if (! Storage::disk('local')->exists($photo->photo_path)) {
+        if (! Storage::disk('public')->exists($photo->photo_path)) {
             abort(404);
         }
 
-        return Storage::disk('local')->response($photo->photo_path);
+        return Storage::disk('public')->response($photo->photo_path);
     }
 
     /**
@@ -513,11 +507,7 @@ class PatrolController extends Controller
         foreach ($collection as $photo) {
             $photos[] = [
                 'id' => (int) $photo->id,
-                'url' => route('app.patrol.scan.photo-item', [
-                    'patrolSession' => $patrolSession->id,
-                    'scan' => $scan->id,
-                    'photo' => $photo->id,
-                ]),
+                'url' => '/storage/' . $photo->photo_path,
                 'sequence' => (int) $photo->sequence,
                 'legacy' => false,
             ];
@@ -526,7 +516,7 @@ class PatrolController extends Controller
         if (! $hasNew && $scan->incident_photo_path) {
             $photos[] = [
                 'id' => 0,
-                'url' => route('app.patrol.scan.photo', ['patrolSession' => $patrolSession->id, 'scan' => $scan->id]),
+                'url' => '/storage/' . $scan->incident_photo_path,
                 'sequence' => 1,
                 'legacy' => true,
             ];

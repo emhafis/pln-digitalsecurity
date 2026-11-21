@@ -173,7 +173,7 @@ function goToPage(page) {
                     </div>
 
                     <div class="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
-                        <Button variant="secondary" @click="applyFilter()">Terapkan</Button>
+                        <Button @click="applyFilter()">Terapkan</Button>
                         <Button variant="ghost" @click="resetFilter">Reset</Button>
                     </div>
                 </div>
@@ -192,10 +192,14 @@ function goToPage(page) {
                     <th>Check-in</th>
                     <th>Check-out</th>
                     <th>Status</th>
-                    <th class="text-right">Aksi</th>
                 </template>
 
-                <tr v-for="record in records" :key="record.id">
+                <tr
+                    v-for="record in records"
+                    :key="record.id"
+                    class="cursor-pointer hover:bg-gray-50/60"
+                    @click="router.visit(record.show_url)"
+                >
                     <td class="whitespace-nowrap text-sm text-gray-700">{{ record.work_date_label }}</td>
                     <td class="min-w-[180px]">
                         <p class="font-medium text-gray-900">{{ record.security_name }}</p>
@@ -219,11 +223,6 @@ function goToPage(page) {
                             <Badge :variant="statusVariants[record.status] ?? 'gray'">{{ record.status_label }}</Badge>
                             <Badge v-if="record.has_pending_correction" variant="amber">Koreksi</Badge>
                         </div>
-                    </td>
-                    <td class="whitespace-nowrap text-right">
-                        <Link :href="record.show_url" class="text-xs font-medium text-blue-600 transition hover:text-blue-700 hover:underline">
-                            Detail
-                        </Link>
                     </td>
                 </tr>
 

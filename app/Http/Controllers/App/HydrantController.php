@@ -9,10 +9,10 @@ use App\Models\HydrantInspection;
 use App\Models\Security;
 use App\Support\AssetInspectionPhotoStorage;
 use App\Support\AssetInspectionRules;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -171,7 +171,7 @@ class HydrantController extends Controller
                 }
 
                 foreach ($uploaded as $file) {
-                    $path = AssetInspectionPhotoStorage::store($file, 'hydrant', (int) $hydrant->id);
+                    $path = AssetInspectionPhotoStorage::store($file, 'hydrant', (int) $hydrant->id, $security->full_name, $hydrant->hydrant_code);
                     $storedPaths[] = $path;
                     $inspection->photos()->create([
                         'photo_path' => $path,
@@ -228,7 +228,7 @@ class HydrantController extends Controller
             'last_maintenance_date' => $hydrant->last_maintenance_date?->format('Y-m-d'),
             'placement' => $hydrant->placement,
             'is_active' => (bool) $hydrant->is_active,
-            'photo_url' => $hydrant->photo ? Storage::disk('public')->url($hydrant->photo) : null,
+            'photo_url' => PublicStorageUrl::for($hydrant->photo),
         ];
     }
 

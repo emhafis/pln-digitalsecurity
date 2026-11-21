@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
@@ -156,7 +156,7 @@ const fmtPct = (v) => `${Number(v ?? 0).toFixed(2)}%`;
                         <SearchSelect v-model="filters.security_id" :options="securities" placeholder="Semua Satpam" none-label="Semua Satpam" search-placeholder="Cari satpam..." />
                     </div>
                     <div class="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
-                        <Button variant="secondary" @click="applyFilter">Terapkan</Button>
+                        <Button @click="applyFilter">Terapkan</Button>
                         <Button variant="ghost" @click="resetFilter">Reset</Button>
                     </div>
                 </div>

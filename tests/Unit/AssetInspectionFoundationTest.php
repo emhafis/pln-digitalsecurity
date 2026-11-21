@@ -189,19 +189,20 @@ class AssetInspectionFoundationTest extends TestCase
         $this->assertFalse(AssetInspectionRules::isSecurityUserEligible($noProfile));
     }
 
-    public function test_photo_storage_uses_private_local_disk_and_managed_paths(): void
+    public function test_photo_storage_uses_public_disk_and_managed_paths(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
 
         $file = UploadedFile::fake()->image('evidence.jpg', 100, 100);
-        $path = AssetInspectionPhotoStorage::store($file, 'apar', 10);
+        $path = AssetInspectionPhotoStorage::store($file, 'apar', 10, 'Asep Ramadan', 'APAR-001');
 
         $this->assertTrue(AssetInspectionPhotoStorage::isManagedPath($path));
         $this->assertStringStartsWith('asset-inspections/apar/10/', $path);
-        Storage::disk('local')->assertExists($path);
+        $this->assertMatchesRegularExpression('/^\d{6}-\d{4}-INSP-APAR-APAR-001-ASEP-RAMADAN-[A-Z0-9]{4}\.jpg$/', basename($path));
+        Storage::disk('public')->assertExists($path);
 
         $this->assertTrue(AssetInspectionPhotoStorage::delete($path));
-        Storage::disk('local')->assertMissing($path);
+        Storage::disk('public')->assertMissing($path);
 
         $this->assertFalse(AssetInspectionPhotoStorage::isManagedPath('public/other/file.jpg'));
         $this->assertFalse(AssetInspectionPhotoStorage::delete('../etc/passwd'));

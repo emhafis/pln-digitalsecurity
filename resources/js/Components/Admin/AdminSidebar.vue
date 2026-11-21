@@ -1,3 +1,7 @@
+<script>
+let adminSidebarScrollTop = 0;
+</script>
+
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { Link, usePage, router } from '@inertiajs/vue3';
@@ -9,14 +13,13 @@ const user = computed(() => page.props.auth?.user);
 const emit = defineEmits(['close']);
 
 const navRef = ref(null);
-let savedScrollTop = 0;
 
 function saveScroll() {
-    if (navRef.value) savedScrollTop = navRef.value.scrollTop;
+    if (navRef.value) adminSidebarScrollTop = navRef.value.scrollTop;
 }
 function restoreScroll() {
     nextTick(() => {
-        if (navRef.value) navRef.value.scrollTop = savedScrollTop;
+        if (navRef.value) navRef.value.scrollTop = adminSidebarScrollTop;
     });
 }
 
@@ -34,7 +37,7 @@ onBeforeUnmount(() => {
 });
 
 const mainNav = [
-    { label: 'Dashboard', href: '/admin' },
+    { label: 'Dashboard', href: '/admin/dashboard' },
 ];
 
 const operationalNav = computed(() => [
@@ -44,6 +47,9 @@ const operationalNav = computed(() => [
     { label: 'Laporan Patroli', href: '/admin/patrol-report' },
     { label: 'Monitoring Kunjungan', href: '/admin/guest-book' },
     { label: user.value?.role === 'superadmin' ? 'Kelola QR Unit' : 'QR Unit', href: '/admin/guest-book/qr' },
+    ...(user.value?.role === 'superadmin'
+        ? [{ label: 'Pengumuman', href: '/admin/announcements' }]
+        : []),
 ]);
 
 const attendanceNav = computed(() => [
@@ -54,6 +60,11 @@ const attendanceNav = computed(() => [
         ? [{ label: 'Pengaturan Absensi', href: '/admin/attendance-setting' }]
         : []),
 ]);
+
+const assetMonitoringNav = [
+    { label: 'Monitoring APAR', href: '/admin/monitoring/apar' },
+    { label: 'Monitoring Hydrant', href: '/admin/monitoring/hydrant' },
+];
 
 const masterNav = [
     { label: 'Data Unit', href: '/admin/unit' },
@@ -149,6 +160,21 @@ function isChildActive(role) {
             <Link
                 v-for="item in attendanceNav"
                 :key="item.label"
+                :href="item.href"
+                class="relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors"
+                :class="isActive(item.href) ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'"
+                @click="emit('close')"
+            >
+                <span v-if="isActive(item.href)" class="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 bg-blue-600" />
+                {{ item.label }}
+            </Link>
+
+            <div class="!mt-5 px-3 pb-1 pt-1">
+                <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Monitoring Aset</p>
+            </div>
+            <Link
+                v-for="item in assetMonitoringNav"
+                :key="item.href"
                 :href="item.href"
                 class="relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors"
                 :class="isActive(item.href) ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'"

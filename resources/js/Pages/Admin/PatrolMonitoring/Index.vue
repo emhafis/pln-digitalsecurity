@@ -28,11 +28,13 @@ const props = defineProps({
 const filters = ref({ ...props.filters });
 
 const statusVariants = {
+    waiting: 'amber',
     pending: 'amber',
+    not_started: 'gray',
+    missed: 'red',
     active: 'blue',
     completed: 'emerald',
     incomplete: 'red',
-    not_started: 'gray',
 };
 
 const sortColumns = [
@@ -214,7 +216,7 @@ function formatTeamLabel(session) {
                         </div>
                     </div>
                     <div class="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
-                        <Button variant="secondary" @click="applyFilter()">Terapkan</Button>
+                        <Button @click="applyFilter()">Terapkan</Button>
                         <Button variant="ghost" @click="resetFilter">Reset</Button>
                     </div>
                 </div>
@@ -261,7 +263,7 @@ function formatTeamLabel(session) {
                         <p class="text-xs text-gray-500">{{ session.shift_time }}</p>
                     </td>
                     <td>
-                        <Badge :variant="statusVariants[session.status] ?? 'gray'">{{ session.status_label }}</Badge>
+                        <Badge :variant="session.status_variant ?? statusVariants[session.display_status] ?? 'gray'">{{ session.status_label }}</Badge>
                     </td>
                     <td class="min-w-[150px]">
                         <div class="flex items-center gap-2">

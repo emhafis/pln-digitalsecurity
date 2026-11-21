@@ -3,6 +3,7 @@ import InputLabel from '@/Components/Admin/InputLabel.vue';
 import InputError from '@/Components/Admin/InputError.vue';
 import TextInput from '@/Components/Admin/TextInput.vue';
 import SearchSelect from '@/Components/Admin/SearchSelect.vue';
+import ImageWithFallback from '@/Components/Admin/ImageWithFallback.vue';
 
 const props = defineProps({
     form: { type: Object, required: true },
@@ -129,7 +130,7 @@ function onPhotoChange(e) {
         <div class="sm:col-span-2">
             <InputLabel value="Foto Hydrant" />
             <div v-if="isEdit && existingPhotoUrl && !form.remove_photo" class="mb-2">
-                <img :src="existingPhotoUrl" alt="Foto Hydrant" class="h-28 w-28 rounded-md border object-cover" />
+                <ImageWithFallback :src="existingPhotoUrl" alt="Foto Hydrant" class="h-28 w-28 rounded-md border object-cover" />
                 <label class="mt-2 flex items-center gap-2 text-sm text-gray-600">
                     <input v-model="form.remove_photo" type="checkbox" class="rounded border-gray-300 text-blue-600" />
                     Hapus foto saat disimpan

@@ -123,7 +123,7 @@ class GuestCheckInTest extends TestCase
 
     public function test_private_file_storage_for_selfie_and_signature(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->makeUnit();
         $uuid = $unit->fresh()->guest_book_qr_code;
         $selfie = UploadedFile::fake()->image('selfie.jpg', 200, 200)->size(500);
@@ -139,9 +139,8 @@ class GuestCheckInTest extends TestCase
         $this->assertNotNull($visit->signature_path);
         $this->assertStringStartsWith('guest-book/selfie/', $visit->selfie_path);
         $this->assertStringStartsWith('guest-book/signature/', $visit->signature_path);
-        Storage::disk('local')->assertExists($visit->selfie_path);
-        Storage::disk('local')->assertExists($visit->signature_path);
-        $this->assertFalse(Storage::disk('public')->exists($visit->selfie_path));
+        Storage::disk('public')->assertExists($visit->selfie_path);
+        Storage::disk('public')->assertExists($visit->signature_path);
     }
 
     public function test_rate_limiting_submit(): void

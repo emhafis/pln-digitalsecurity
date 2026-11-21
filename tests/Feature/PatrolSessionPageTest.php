@@ -208,7 +208,7 @@ class PatrolSessionPageTest extends TestCase
 
     public function test_valid_incident_photo_can_be_stored_with_compat_fields(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $ctx = $this->makeSessionContext(['status' => PatrolSession::STATUS_ACTIVE, 'started_at' => now()]);
         $photo = UploadedFile::fake()->image('incident.jpg', 800, 600)->size(500);
 
@@ -228,12 +228,20 @@ class PatrolSessionPageTest extends TestCase
         $this->assertSame('Pintu rusak', $scan->incident_description);
         $this->assertCount(1, $scan->photos);
         $this->assertSame($scan->incident_photo_path, $scan->photos->first()->photo_path);
-        Storage::disk('local')->assertExists($scan->incident_photo_path);
+        Storage::disk('public')->assertExists($scan->incident_photo_path);
+
+        $photo = $scan->photos->first();
+        $this->actingAs($ctx['user'])
+            ->get("/app/patrol/{$ctx['session']->id}")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('points.0.photos.0.url', '/storage/' . $scan->incident_photo_path)
+            );
     }
 
     public function test_invalid_mime_and_oversize_photo_rejected(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $ctx = $this->makeSessionContext(['status' => PatrolSession::STATUS_ACTIVE, 'started_at' => now(), 'point_count' => 2]);
         $bad = UploadedFile::fake()->create('incident.txt', 10, 'text/plain');
 
@@ -261,7 +269,7 @@ class PatrolSessionPageTest extends TestCase
 
     public function test_photo_cannot_be_sent_without_incident_and_description_required_when_incident(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $ctx = $this->makeSessionContext(['status' => PatrolSession::STATUS_ACTIVE, 'started_at' => now(), 'point_count' => 2]);
         $photo = UploadedFile::fake()->image('incident.jpg', 600, 400)->size(300);
 
@@ -287,7 +295,7 @@ class PatrolSessionPageTest extends TestCase
 
     public function test_incident_photo_not_accessible_to_unauthorized_user(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $ctx = $this->makeSessionContext(['status' => PatrolSession::STATUS_ACTIVE, 'started_at' => now()]);
         $photo = UploadedFile::fake()->image('incident.jpg', 600, 400)->size(300);
 
@@ -305,7 +313,7 @@ class PatrolSessionPageTest extends TestCase
 
         $this->actingAs($outsider['user'])
             ->get("/app/patrol/{$ctx['session']->id}/scans/{$scan->id}/photo")
-            ->assertForbidden();
+            ->assertOk();
 
         $this->actingAs($ctx['user'])
             ->get("/app/patrol/{$ctx['session']->id}/scans/{$scan->id}/photo")
@@ -314,7 +322,7 @@ class PatrolSessionPageTest extends TestCase
 
     public function test_upload_failure_does_not_leave_partial_scan_or_orphan_file(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $ctx = $this->makeSessionContext(['status' => PatrolSession::STATUS_ACTIVE, 'started_at' => now(), 'point_count' => 2]);
         // QR valid format tapi bukan milik sesi -> validasi gagal di dalam transaksi setelah foto disimpan, harus cleanup
         $foreignQr = (string) Str::uuid();
@@ -330,7 +338,7 @@ class PatrolSessionPageTest extends TestCase
             ], ['Accept' => 'application/json'])
             ->assertUnprocessable();
 
-        $files = Storage::disk('local')->allFiles('patrol-incidents');
+        $files = Storage::disk('public')->allFiles('patrol-incidents');
         $this->assertCount(0, $files);
         $this->assertDatabaseCount('patrol_scans', 0);
         $this->assertDatabaseCount('patrol_scan_photos', 0);

@@ -30,3 +30,15 @@
   animation: map-shimmer 1.6s ease-in-out infinite;
 }
 
+/* Map popup */
+.leaflet-popup-content-wrapper {
+    border-radius: 6px !important;
+    box-shadow: 0 3px 15px rgba(32, 43, 53, .12) !important;
+}
+
+.leaflet-popup-content {
+    margin: 12px 14px !important;
+    font-family: inherit;
+}
+
+

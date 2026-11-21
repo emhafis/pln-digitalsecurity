@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\AuthorizesAssetAccess;
 use App\Http\Controllers\Controller;
 use App\Models\Hydrant;
 use App\Models\Unit;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -131,11 +132,8 @@ class HydrantController extends Controller
             : true;
 
         $photoPath = null;
-        if ($request->hasFile('photo')) {
-            $photoPath = $this->storeHydrantPhoto($request->file('photo'));
-        }
 
-        DB::transaction(function () use ($validated, $isActive, &$photoPath) {
+        DB::transaction(function () use ($request, $validated, $isActive, &$photoPath) {
             $hydrant = Hydrant::query()->create([
                 'unit_id' => (int) $validated['unit_id'],
                 'hydrant_code' => 'TMP-'.Str::uuid()->toString(),
@@ -150,24 +148,15 @@ class HydrantController extends Controller
                 'placement' => $validated['placement'],
                 'qr_code' => Str::uuid()->toString(),
                 'is_active' => $isActive,
-                'photo' => $photoPath,
+                'photo' => null,
             ]);
 
             $hydrant->hydrant_code = $this->generateCode($hydrant->id);
 
-            $currentPhoto = $photoPath;
-            if ($currentPhoto !== null && is_string($currentPhoto) && $currentPhoto !== '' && str_starts_with(str_replace('\\', '/', $currentPhoto), 'hydrant-photos/')) {
-                $dir = pathinfo($currentPhoto, PATHINFO_DIRNAME);
-                $ext = pathinfo($currentPhoto, PATHINFO_EXTENSION) ?: 'jpg';
-                $newName = \App\Support\UploadFilename::make(['FOTO-HYDRANT', $hydrant->hydrant_code, $validated['name'] ?? $hydrant->name], $ext);
-                $newPath = ($dir === '.' ? 'hydrant-photos' : str_replace('\\', '/', $dir)).'/'.$newName;
-                if ($newPath !== $currentPhoto && Storage::disk('public')->exists($currentPhoto)) {
-                    if (Storage::disk('public')->move($currentPhoto, $newPath)) {
-                        $currentPhoto = $newPath;
-                    }
-                }
+            if ($request->hasFile('photo')) {
+                $photoPath = $this->storeHydrantPhoto($request->file('photo'), $hydrant->hydrant_code, $hydrant->name);
             }
-            $photoPath = $currentPhoto;
+
             $hydrant->photo = $photoPath;
             $hydrant->save();
         });
@@ -221,13 +210,11 @@ class HydrantController extends Controller
         $removePhoto = filter_var($validated['remove_photo'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if ($request->hasFile('photo')) {
-            $ext = \App\Support\UploadFilename::extensionFromUpload($request->file('photo'), 'jpg');
-            $name = \App\Support\UploadFilename::make(['FOTO-HYDRANT', $hydrant->hydrant_code, $validated['name'] ?? $hydrant->name], $ext);
-            $stored = $request->file('photo')->storeAs('hydrant-photos', $name, 'public');
-            if ($stored === false) {
-                throw ValidationException::withMessages(['photo' => 'Gagal menyimpan foto Hydrant.']);
-            }
-            $newPhotoPath = $stored;
+            $newPhotoPath = $this->storeHydrantPhoto(
+                $request->file('photo'),
+                $hydrant->hydrant_code,
+                $validated['name'] ?? $hydrant->name
+            );
         } elseif ($removePhoto) {
             $newPhotoPath = null;
         }
@@ -369,10 +356,14 @@ class HydrantController extends Controller
     /**
      * Store Hydrant master photo on public disk and return stored path.
      */
-    private function storeHydrantPhoto($file): string
+    private function storeHydrantPhoto($file, ?string $hydrantCode = null, ?string $placement = null): string
     {
         $ext = \App\Support\UploadFilename::extensionFromUpload($file, 'jpg');
-        $filename = \App\Support\UploadFilename::make(['FOTO-HYDRANT'], $ext);
+        $filename = \App\Support\UploadFilename::dated([
+            'FOTO-HYDR',
+            \App\Support\UploadFilename::short($hydrantCode ?? '', 12),
+            \App\Support\UploadFilename::short($placement ?? '', 12),
+        ], $ext);
         $path = $file->storeAs('hydrant-photos', $filename, 'public');
         if ($path === false) {
             throw ValidationException::withMessages(['photo' => 'Gagal menyimpan foto Hydrant.']);
@@ -432,7 +423,7 @@ class HydrantController extends Controller
             'last_maintenance_date' => $hydrant->last_maintenance_date?->format('Y-m-d'),
             'qr_code' => $hydrant->qr_code,
             'is_active' => (bool) $hydrant->is_active,
-            'photo_url' => $hydrant->photo ? Storage::disk('public')->url($hydrant->photo) : null,
+            'photo_url' => PublicStorageUrl::for($hydrant->photo),
             'unit_id' => $hydrant->unit_id,
             'unit_name' => $hydrant->unit?->unit_name ?? '-',
             'created_at' => $hydrant->created_at?->format('d M Y, H:i'),
@@ -461,7 +452,7 @@ class HydrantController extends Controller
             'installation_date' => $hydrant->installation_date?->format('Y-m-d'),
             'last_maintenance_date' => $hydrant->last_maintenance_date?->format('Y-m-d'),
             'is_active' => (bool) $hydrant->is_active,
-            'photo_url' => $hydrant->photo ? Storage::disk('public')->url($hydrant->photo) : null,
+            'photo_url' => PublicStorageUrl::for($hydrant->photo),
             'qr_code' => $hydrant->qr_code,
         ];
     }

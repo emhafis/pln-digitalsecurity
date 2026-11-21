@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
@@ -8,6 +8,7 @@ import Badge from '@/Components/Admin/Badge.vue';
 import Button from '@/Components/Admin/Button.vue';
 import FlashMessage from '@/Components/Admin/FlashMessage.vue';
 import DataTable from '@/Components/Admin/DataTable.vue';
+import ImageWithFallback from '@/Components/Admin/ImageWithFallback.vue';
 
 const props = defineProps({
     session: { type: Object, required: true },
@@ -37,11 +38,13 @@ function togglePoint(pointId) {
 }
 
 const statusVariants = {
+    waiting: 'amber',
     pending: 'amber',
+    not_started: 'gray',
+    missed: 'red',
     active: 'blue',
     completed: 'emerald',
     incomplete: 'red',
-    not_started: 'gray',
 };
 
 function pointStatusVariant(point) {
@@ -92,7 +95,7 @@ function formatGps(scan) {
                         <h2 class="mt-1 text-lg font-semibold text-gray-900">{{ session.unit_name }} <span v-if="session.unit_code" class="text-sm font-normal text-gray-500">({{ session.unit_code }})</span></h2>
                         <p class="mt-1 text-sm text-gray-700">{{ session.post_name }} <span v-if="session.post_code" class="text-gray-500">({{ session.post_code }})</span> · Regu {{ session.team_name }}</p>
                     </div>
-                    <Badge :variant="statusVariants[session.status] ?? 'gray'">{{ session.status_label }}</Badge>
+                    <Badge :variant="session.status_variant ?? statusVariants[session.display_status] ?? 'gray'">{{ session.status_label }}</Badge>
                 </div>
 
                 <div class="mt-5 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -201,7 +204,7 @@ function formatGps(scan) {
                                                     <p class="mb-1 text-xs text-gray-500">Foto insiden ({{ scan.photos.length }})</p>
                                                     <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                                                         <a v-for="ph in scan.photos" :key="`ph-${scan.id}-${ph.id}-${ph.sequence}`" :href="ph.url" target="_blank" class="block overflow-hidden rounded border border-gray-200 bg-white">
-                                                            <img :src="ph.url" alt="Foto insiden" class="h-24 w-full object-cover" loading="lazy" />
+                                                            <ImageWithFallback :src="ph.url" alt="Foto insiden" class="h-24 w-full object-cover" loading="lazy" />
                                                         </a>
                                                     </div>
                                                 </div>
@@ -234,7 +237,7 @@ function formatGps(scan) {
                             <p class="mb-2 text-xs font-medium text-gray-600">Foto Bukti ({{ incident.photos.length }})</p>
                             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                                 <a v-for="ph in incident.photos" :key="`inc-${incident.id}-${ph.id}-${ph.sequence}`" :href="ph.url" target="_blank" class="block overflow-hidden rounded-md border border-gray-200 bg-white">
-                                    <img :src="ph.url" alt="Foto insiden" class="h-28 w-full object-cover" loading="lazy" />
+                                    <ImageWithFallback :src="ph.url" alt="Foto insiden" class="h-28 w-full object-cover" loading="lazy" />
                                 </a>
                             </div>
                         </div>

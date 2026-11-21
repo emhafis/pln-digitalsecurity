@@ -45,4 +45,15 @@ class Apar extends Model
     {
         return $this->hasMany(AparInspection::class);
     }
+    public function typeName(): string
+    {
+        return match ($this->apar_type) {
+            'dry_chemical' => 'Dry Chemical',
+            'co2' => 'CO2',
+            'foam' => 'Foam',
+            'air' => 'Air',
+            'powder' => 'Powder',
+            default => (string) $this->apar_type,
+        };
+    }
 }

@@ -11,6 +11,7 @@ use App\Models\SecurityPost;
 use App\Models\SecurityTeam;
 use App\Models\Shift;
 use App\Models\Unit;
+use App\Services\PatrolSessionStatusService;
 use App\Support\AttendanceClock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -23,7 +24,7 @@ class PatrolSessionController extends Controller
 {
     use ResolvesAttendanceScope;
 
-    public function index(Request $request): Response
+    public function index(Request $request, PatrolSessionStatusService $statusService): Response
     {
         $scope = $this->attendanceScope($request);
         $isSuperadmin = $request->user()?->role === 'superadmin';
@@ -129,11 +130,13 @@ class PatrolSessionController extends Controller
             ->orderByDesc('patrol_sessions.id');
 
         $paginator = $query->paginate(50)->withQueryString();
+        $now = AttendanceClock::nowUtc();
 
-        $sessions = $paginator->getCollection()->map(function (PatrolSession $session) {
+        $sessions = $paginator->getCollection()->map(function (PatrolSession $session) use ($statusService, $now) {
             $required = (int) $session->required_points;
             $fulfilled = (int) $session->fulfilled_points;
             $progress = $required > 0 ? (int) round(($fulfilled / $required) * 100) : 0;
+            $displayStatus = $statusService->resolve($session, $now);
 
             return [
                 'id' => $session->id,
@@ -149,7 +152,9 @@ class PatrolSessionController extends Controller
                 'shift_code' => $session->shift_code,
                 'shift_time' => $this->formatShiftTime($session->shift_start_time, $session->shift_end_time),
                 'status' => $session->status,
-                'status_label' => $this->statusLabel($session->status),
+                'display_status' => $displayStatus['status'],
+                'status_label' => $displayStatus['label'],
+                'status_variant' => $displayStatus['variant'],
                 'started_at' => AttendanceClock::formatWib($session->started_at),
                 'ended_at' => AttendanceClock::formatWib($session->ended_at),
                 'required_points' => $required,
@@ -172,7 +177,7 @@ class PatrolSessionController extends Controller
         ]));
     }
 
-    public function show(Request $request, PatrolSession $patrolSession): Response
+    public function show(Request $request, PatrolSession $patrolSession, PatrolSessionStatusService $statusService): Response
     {
         $this->authorizeSessionAccess($request, $patrolSession);
 
@@ -281,11 +286,13 @@ class PatrolSessionController extends Controller
                     'reported_by_registration_number' => $scan->security_registration_number,
                     'has_photo' => count($photos) > 0,
                     'photo_url' => $photos[0]['url'] ?? ($scan->incident_photo_path
-                        ? route('admin.patrol-session.scan.photo', ['patrolSession' => $patrolSession->id, 'scan' => $scan->id])
+                        ? '/storage/' . $scan->incident_photo_path
                         : null),
                     'photos' => $photos,
                 ];
             })->values();
+
+        $displayStatus = $statusService->resolve($patrolSession, AttendanceClock::nowUtc());
 
         return Inertia::render('Admin/PatrolMonitoring/Show', [
             'session' => [
@@ -302,7 +309,9 @@ class PatrolSessionController extends Controller
                 'work_date_label' => $patrolSession->work_date?->format('d M Y'),
                 'shift_time' => $this->formatShiftTime($patrolSession->shift_start_time, $patrolSession->shift_end_time),
                 'status' => $patrolSession->status,
-                'status_label' => $this->statusLabel($patrolSession->status),
+                'display_status' => $displayStatus['status'],
+                'status_label' => $displayStatus['label'],
+                'status_variant' => $displayStatus['variant'],
                 'started_at' => AttendanceClock::formatWib($patrolSession->started_at),
                 'ended_at' => AttendanceClock::formatWib($patrolSession->ended_at),
                 'required_points' => $required,
@@ -319,32 +328,28 @@ class PatrolSessionController extends Controller
 
     public function scanPhoto(Request $request, PatrolSession $patrolSession, PatrolScan $scan): StreamedResponse
     {
-        $this->authorizeSessionAccess($request, $patrolSession);
-
         if ((int) $scan->patrol_session_id !== (int) $patrolSession->id || empty($scan->incident_photo_path)) {
             abort(404);
         }
 
-        if (! Storage::disk('local')->exists($scan->incident_photo_path)) {
+        if (! Storage::disk('public')->exists($scan->incident_photo_path)) {
             abort(404);
         }
 
-        return Storage::disk('local')->response($scan->incident_photo_path);
+        return Storage::disk('public')->response($scan->incident_photo_path);
     }
 
     public function scanPhotoItem(Request $request, PatrolSession $patrolSession, PatrolScan $scan, PatrolScanPhoto $photo): StreamedResponse
     {
-        $this->authorizeSessionAccess($request, $patrolSession);
-
         if ((int) $scan->patrol_session_id !== (int) $patrolSession->id || (int) $photo->patrol_scan_id !== (int) $scan->id) {
             abort(404);
         }
 
-        if (! Storage::disk('local')->exists($photo->photo_path)) {
+        if (! Storage::disk('public')->exists($photo->photo_path)) {
             abort(404);
         }
 
-        return Storage::disk('local')->response($photo->photo_path);
+        return Storage::disk('public')->response($photo->photo_path);
     }
 
     /**
@@ -363,11 +368,7 @@ class PatrolSessionController extends Controller
         foreach ($collection as $photo) {
             $photos[] = [
                 'id' => (int) $photo->id,
-                'url' => route('admin.patrol-session.scan.photo-item', [
-                    'patrolSession' => $patrolSession->id,
-                    'scan' => $scan->id,
-                    'photo' => $photo->id,
-                ]),
+                'url' => '/storage/' . $photo->photo_path,
                 'sequence' => (int) $photo->sequence,
                 'legacy' => false,
             ];
@@ -376,7 +377,7 @@ class PatrolSessionController extends Controller
         if (! $hasNew && $scan->incident_photo_path) {
             $photos[] = [
                 'id' => 0,
-                'url' => route('admin.patrol-session.scan.photo', ['patrolSession' => $patrolSession->id, 'scan' => $scan->id]),
+                'url' => '/storage/' . $scan->incident_photo_path,
                 'sequence' => 1,
                 'legacy' => true,
             ];
@@ -545,18 +546,6 @@ class PatrolSessionController extends Controller
         $e = $end ? substr((string) $end, 0, 5) : '';
 
         return $s && $e ? $s.' - '.$e : ($s ?: $e ?: '-');
-    }
-
-    private function statusLabel(string $status): string
-    {
-        return match ($status) {
-            PatrolSession::STATUS_PENDING => 'Menunggu',
-            PatrolSession::STATUS_ACTIVE => 'Aktif',
-            PatrolSession::STATUS_COMPLETED => 'Selesai',
-            PatrolSession::STATUS_INCOMPLETE => 'Tidak Lengkap',
-            PatrolSession::STATUS_NOT_STARTED => 'Tidak Dimulai',
-            default => ucfirst($status),
-        };
     }
 
     private function queryDate(Request $request, string $key): ?string

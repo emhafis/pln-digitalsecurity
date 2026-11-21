@@ -7,20 +7,30 @@ use Illuminate\Support\Facades\Storage;
 
 class AssetInspectionPhotoStorage
 {
-    public const DISK = 'local';
+    public const DISK = 'public';
 
     public const BASE_DIRECTORY = 'asset-inspections';
 
     /**
      * Store an inspection photo on the private local disk and return its relative path.
      */
-    public static function store(UploadedFile $file, string $assetType, int $assetId): string
-    {
+    public static function store(
+        UploadedFile $file,
+        string $assetType,
+        int $assetId,
+        ?string $personName = null,
+        ?string $assetCode = null
+    ): string {
         $type = self::normalizeAssetType($assetType);
         $directory = self::directory($type, $assetId);
 
         $extension = UploadFilename::extensionFromUpload($file, 'jpg');
-        $filename = UploadFilename::make(['FOTO-INSPEKSI', $type, $assetId], $extension);
+        $code = $type === 'apar' ? 'INSP-APAR' : 'INSP-HYDR';
+        $filename = UploadFilename::dated([
+            $code,
+            UploadFilename::short($assetCode ?? (string) $assetId, 12),
+            UploadFilename::short($personName ?? '', 12),
+        ], $extension);
         $path = $directory.'/'.$filename;
 
         $stored = Storage::disk(self::DISK)->putFileAs($directory, $file, $filename);

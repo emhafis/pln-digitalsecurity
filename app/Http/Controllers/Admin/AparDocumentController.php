@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Apar;
 use App\Services\PatrolPointQrCodeService;
 use App\Support\AparAnnualCardData;
+use App\Support\AssetInspectionRules;
 use Dompdf\Dompdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -55,6 +56,41 @@ class AparDocumentController extends Controller
         $model = $this->findAuthorizedApar($request, $apar);
         $year = AparAnnualCardData::resolveYear($request->query('year', now()->year));
         $card = (new AparAnnualCardData)->build($model, $year);
+        $checklistItems = collect(AssetInspectionRules::aparChecklist())
+            ->map(fn (array $item) => ['name' => $item['item_name'], 'label' => $item['item_label']])
+            ->values()
+            ->all();
+
+        $inspections = collect();
+        foreach (($card['inspectionsByMonth'] ?? []) as $month => $rows) {
+            $first = $rows[0] ?? null;
+            if (! is_array($first)) {
+                continue;
+            }
+
+            $inspectedAt = isset($first['date_label']) && is_string($first['date_label'])
+                ? \Illuminate\Support\Carbon::createFromFormat('d/m/Y H:i', $first['date_label'], 'Asia/Jakarta')
+                : null;
+
+            $items = collect($first['items'] ?? [])->map(function (array $item) use ($checklistItems) {
+                $label = (string) ($item['label'] ?? '');
+                $name = collect($checklistItems)->firstWhere('label', $label)['name'] ?? null;
+                $status = (string) ($item['status'] ?? '');
+
+                return (object) [
+                    'item_name' => $name,
+                    'is_good' => $status === 'Baik',
+                    'note' => $item['note'] ?? null,
+                ];
+            });
+
+            $inspections->put((string) str_pad((string) $month, 2, '0', STR_PAD_LEFT), (object) [
+                'inspected_at' => $inspectedAt,
+                'notes' => $first['notes'] ?? null,
+                'security' => (object) ['full_name' => $first['officer'] ?? '-'],
+                'items' => $items,
+            ]);
+        }
 
         $printedAt = now()->timezone('Asia/Jakarta')->format('d-m-Y H:i') . ' WIB';
 
@@ -66,8 +102,8 @@ class AparDocumentController extends Controller
             'apar' => $model,
             'aparTypeLabel' => $this->aparTypeLabel($model->apar_type),
             'year' => $card['year'],
-            'months' => $card['months'],
-            'inspectionsByMonth' => $card['inspectionsByMonth'],
+            'checklistItems' => $checklistItems,
+            'inspections' => $inspections,
             'printedAt' => $printedAt,
         ])->render(), 'UTF-8');
         $pdf->setPaper('a4', 'portrait');
@@ -77,7 +113,7 @@ class AparDocumentController extends Controller
 
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ]);
     }
 
@@ -86,7 +122,6 @@ class AparDocumentController extends Controller
         $scope = $this->assetUnitScope($request);
         $filters = $this->normalizedExportFilters($request, $scope);
 
-        // If apar_id specified ensure it is in scope
         if ($filters['apar_id'] !== null) {
             $this->findAuthorizedApar($request, (int) $filters['apar_id']);
         }
@@ -99,16 +134,12 @@ class AparDocumentController extends Controller
     private function findAuthorizedApar(Request $request, int $id): Apar
     {
         $scope = $this->assetUnitScope($request);
-        $apar = Apar::query()->with('unit')->findOrFail($id);
+        $apar = Apar::query()->with('unit.parent')->findOrFail($id);
         $this->authorizeAssetRecord($scope, $apar);
 
         return $apar;
     }
 
-    /**
-     * @param array<int,int>|null $scope
-     * @return array{apar_id:int|null,search:string,result:string,date_from:string,date_to:string,unit_scope:array<int,int>|null}
-     */
     private function normalizedExportFilters(Request $request, ?array $scope): array
     {
         $aparId = $request->query('apar_id');

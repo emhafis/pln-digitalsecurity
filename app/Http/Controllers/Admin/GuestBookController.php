@@ -138,7 +138,7 @@ class GuestBookController extends Controller
             abort(404);
         }
 
-        $disk = Storage::disk('local');
+        $disk = Storage::disk('public');
         if (! $disk->exists($path)) {
             abort(404);
         }
@@ -216,8 +216,8 @@ class GuestBookController extends Controller
             'unit_code' => $v->unit_code_snapshot ?: ($v->unit?->unit_code ?? null),
             'has_selfie' => ! empty($v->selfie_path),
             'has_signature' => ! empty($v->signature_path),
-            'selfie_url' => ! empty($v->selfie_path) ? route('admin.guest-book.file', [$v->id, 'selfie']) : null,
-            'signature_url' => ! empty($v->signature_path) ? route('admin.guest-book.file', [$v->id, 'signature']) : null,
+            'selfie_url' => ! empty($v->selfie_path) ? '/storage/' . $v->selfie_path : null,
+            'signature_url' => ! empty($v->signature_path) ? '/storage/' . $v->signature_path : null,
             'consent_given' => (bool) $v->consent_given,
             'consent_at' => $v->consent_at?->format('d M Y, H:i'),
             'can_checkout' => $active,

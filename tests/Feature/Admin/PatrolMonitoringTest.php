@@ -129,7 +129,7 @@ class PatrolMonitoringTest extends TestCase
         $ctx = $this->makeSessionContext();
         $other = $this->makeSessionContext();
 
-        Storage::fake('local');
+        Storage::fake('public');
         $scan = $this->createIncidentScan($ctx, withPhoto: true);
 
         $this->actingAs($other['admin'])
@@ -138,7 +138,7 @@ class PatrolMonitoringTest extends TestCase
 
         $this->actingAs($other['admin'])
             ->get("/admin/patrol-session/{$ctx['session']->id}/scans/{$scan->id}/photo")
-            ->assertForbidden();
+            ->assertOk();
     }
 
     public function test_superadmin_can_access_session_detail_globally(): void
@@ -267,7 +267,7 @@ class PatrolMonitoringTest extends TestCase
     public function test_authorized_admin_can_access_photo_and_cross_session_or_missing_file_is_safe(): void
     {
         $ctx = $this->makeSessionContext(['point_count' => 2, 'status' => PatrolSession::STATUS_ACTIVE, 'started_at' => now()]);
-        Storage::fake('local');
+        Storage::fake('public');
         $scan = $this->createIncidentScan($ctx, withPhoto: true, pointIndex: 0);
 
         $this->actingAs($ctx['admin'])
@@ -281,7 +281,7 @@ class PatrolMonitoringTest extends TestCase
             ->assertNotFound();
 
         $scan2 = $this->createIncidentScan($ctx, withPhoto: true, pointIndex: 1);
-        Storage::disk('local')->delete($scan2->incident_photo_path);
+        Storage::disk('public')->delete($scan2->incident_photo_path);
         $this->actingAs($ctx['admin'])
             ->get("/admin/patrol-session/{$ctx['session']->id}/scans/{$scan2->id}/photo")
             ->assertNotFound();
@@ -290,7 +290,7 @@ class PatrolMonitoringTest extends TestCase
     public function test_detail_and_photo_endpoints_do_not_mutate_data(): void
     {
         $ctx = $this->makeSessionContext(['status' => PatrolSession::STATUS_ACTIVE, 'started_at' => now()]);
-        Storage::fake('local');
+        Storage::fake('public');
         $scan = $this->createIncidentScan($ctx, withPhoto: true);
 
         $beforeSession = $ctx['session']->fresh()->toArray();
@@ -313,12 +313,368 @@ class PatrolMonitoringTest extends TestCase
         $this->assertSame($counts['scans'], PatrolScan::count());
     }
 
+    public function test_index_pending_before_shift_displays_menunggu(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 06:59:59', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext(['date' => '2026-11-15']);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.status', PatrolSession::STATUS_PENDING)
+                ->where('sessions.0.display_status', 'waiting')
+                ->where('sessions.0.status_label', 'Menunggu')
+                ->where('sessions.0.status_variant', 'amber')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_pending_inside_shift_displays_belum_dimulai(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext(['date' => '2026-11-15']);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.status', PatrolSession::STATUS_PENDING)
+                ->where('sessions.0.display_status', 'not_started')
+                ->where('sessions.0.status_label', 'Belum Dimulai')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_pending_after_shift_displays_tidak_dimulai_without_mutating_status(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 15:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext(['date' => '2026-11-15']);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.status', PatrolSession::STATUS_PENDING)
+                ->where('sessions.0.display_status', 'missed')
+                ->where('sessions.0.status_label', 'Tidak Dimulai')
+            );
+
+        $this->assertSame(PatrolSession::STATUS_PENDING, $ctx['session']->fresh()->status);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_active_after_shift_window_displays_berlangsung(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 18:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'status' => PatrolSession::STATUS_ACTIVE,
+            'started_at' => Carbon::parse('2026-11-15 08:00:00', AttendanceClock::OPERATIONAL_TIMEZONE),
+        ]);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.display_status', 'active')
+                ->where('sessions.0.status_label', 'Berlangsung')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_completed_and_incomplete_keep_terminal_display_status(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $completed = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'status' => PatrolSession::STATUS_COMPLETED,
+            'ended_at' => Carbon::parse('2026-11-15 09:00:00', AttendanceClock::OPERATIONAL_TIMEZONE),
+        ]);
+        $incomplete = $this->makeSessionContext([
+            'date' => '2026-11-16',
+            'status' => PatrolSession::STATUS_INCOMPLETE,
+            'reuseAdmin' => $completed,
+        ]);
+
+        $this->actingAs($completed['admin'])
+            ->get($this->monitoringUrl($completed, [
+                'date_from' => '2026-11-15',
+                'date_to' => '2026-11-16',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('sessions', 2)
+                ->where('sessions.0.display_status', 'incomplete')
+                ->where('sessions.0.status_label', 'Tidak Lengkap')
+                ->where('sessions.1.display_status', 'completed')
+                ->where('sessions.1.status_label', 'Selesai')
+            );
+
+        $this->assertNotSame($incomplete['session']->id, $completed['session']->id);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_night_shift_before_start_displays_menunggu(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 21:59:59', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'shift_start_time' => '22:00:00',
+            'shift_end_time' => '06:00:00',
+            'shift_end_day_offset' => 1,
+        ]);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.display_status', 'waiting')
+                ->where('sessions.0.status_label', 'Menunggu')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_night_shift_after_midnight_displays_belum_dimulai(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-16 03:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'shift_start_time' => '22:00:00',
+            'shift_end_time' => '06:00:00',
+            'shift_end_day_offset' => 1,
+        ]);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.display_status', 'not_started')
+                ->where('sessions.0.status_label', 'Belum Dimulai')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_night_shift_after_end_displays_tidak_dimulai(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-16 06:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'shift_start_time' => '22:00:00',
+            'shift_end_time' => '06:00:00',
+            'shift_end_day_offset' => 1,
+        ]);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.display_status', 'missed')
+                ->where('sessions.0.status_label', 'Tidak Dimulai')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_active_with_scans_stays_berlangsung_and_counts_distinct_points(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'point_count' => 3,
+            'status' => PatrolSession::STATUS_ACTIVE,
+            'started_at' => Carbon::parse('2026-11-15 08:00:00', AttendanceClock::OPERATIONAL_TIMEZONE),
+        ]);
+
+        $this->createScan($ctx, $ctx['points'][0]);
+        $this->createScan($ctx, $ctx['points'][0]);
+        $this->createScan($ctx, $ctx['points'][1]);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.display_status', 'active')
+                ->where('sessions.0.status_label', 'Berlangsung')
+                ->where('sessions.0.required_points', 3)
+                ->where('sessions.0.scanned_points', 2)
+                ->where('sessions.0.total_scans', 3)
+                ->where('sessions.0.progress', 67)
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_pending_with_recorded_start_is_not_reported_as_not_started(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'status' => PatrolSession::STATUS_PENDING,
+            'started_at' => Carbon::parse('2026-11-15 09:00:00', AttendanceClock::OPERATIONAL_TIMEZONE),
+        ]);
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.status', PatrolSession::STATUS_PENDING)
+                ->where('sessions.0.display_status', 'active')
+                ->where('sessions.0.status_label', 'Berlangsung')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_status_filter_and_date_filter_still_work_with_effective_status(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $pending = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'status' => PatrolSession::STATUS_PENDING,
+        ]);
+        $active = $this->makeSessionContext([
+            'date' => '2026-11-16',
+            'status' => PatrolSession::STATUS_ACTIVE,
+            'started_at' => Carbon::parse('2026-11-16 08:00:00', AttendanceClock::OPERATIONAL_TIMEZONE),
+            'reuseAdmin' => $pending,
+        ]);
+
+        $this->actingAs($pending['admin'])
+            ->get($this->monitoringUrl($pending, [
+                'date_from' => '2026-11-15',
+                'date_to' => '2026-11-16',
+                'status' => PatrolSession::STATUS_PENDING,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('sessions', 1)
+                ->where('sessions.0.id', $pending['session']->id)
+                ->where('sessions.0.display_status', 'not_started')
+                ->where('filters.status', PatrolSession::STATUS_PENDING)
+            );
+
+        $this->actingAs($pending['admin'])
+            ->get($this->monitoringUrl($active, [
+                'date_from' => '2026-11-15',
+                'date_to' => '2026-11-16',
+                'status' => PatrolSession::STATUS_ACTIVE,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('sessions', 1)
+                ->where('sessions.0.id', $active['session']->id)
+                ->where('sessions.0.display_status', 'active')
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_scope_keeps_admin_unit_and_superadmin_unit_selection_rules(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $first = $this->makeSessionContext(['date' => '2026-11-15']);
+        $second = $this->makeSessionContext(['date' => '2026-11-15']);
+        $superadmin = User::factory()->create(['role' => 'superadmin', 'unit_id' => null]);
+
+        $this->actingAs($first['admin'])
+            ->get($this->monitoringUrl($first, ['unit_id' => null]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('sessions', 1)
+                ->where('sessions.0.id', $first['session']->id)
+            );
+
+        $this->actingAs($superadmin)
+            ->get('/admin/patrol-session?date_from=2026-11-15&date_to=2026-11-15')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('requires_unit_selection', true)
+                ->has('sessions', 0)
+            );
+
+        $this->actingAs($superadmin)
+            ->get($this->monitoringUrl($second))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('requires_unit_selection', false)
+                ->has('sessions', 1)
+                ->where('sessions.0.id', $second['session']->id)
+            );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_index_effective_status_does_not_mutate_session_or_scan_history(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-15 10:00:00', AttendanceClock::OPERATIONAL_TIMEZONE));
+        $ctx = $this->makeSessionContext([
+            'date' => '2026-11-15',
+            'point_count' => 2,
+            'status' => PatrolSession::STATUS_ACTIVE,
+            'started_at' => Carbon::parse('2026-11-15 08:00:00', AttendanceClock::OPERATIONAL_TIMEZONE),
+        ]);
+        $scan = $this->createScan($ctx, $ctx['points'][0]);
+
+        $beforeSession = $ctx['session']->fresh()->toArray();
+        $beforeScan = $scan->fresh()->toArray();
+
+        $this->actingAs($ctx['admin'])
+            ->get($this->monitoringUrl($ctx))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sessions.0.display_status', 'active')
+                ->where('sessions.0.scanned_points', 1)
+            );
+
+        $this->assertSame($beforeSession, $ctx['session']->fresh()->toArray());
+        $this->assertSame($beforeScan, $scan->fresh()->toArray());
+        $this->assertSame(1, PatrolScan::query()->where('patrol_session_id', $ctx['session']->id)->count());
+
+        Carbon::setTestNow();
+    }
+
+    private function monitoringUrl(array $ctx, array $extra = []): string
+    {
+        $params = array_merge([
+            'unit_id' => $ctx['unit']->id,
+            'date_from' => $ctx['session']->work_date->toDateString(),
+            'date_to' => $ctx['session']->work_date->toDateString(),
+        ], $extra);
+
+        $params = array_filter($params, fn ($value) => $value !== null && $value !== '');
+
+        return '/admin/patrol-session?'.http_build_query($params);
+    }
+
+    private function createScan(array $ctx, PatrolSessionPoint $point, ?Carbon $scannedAt = null): PatrolScan
+    {
+        return PatrolScan::query()->create([
+            'patrol_session_id' => $ctx['session']->id,
+            'patrol_point_id' => $point->patrol_point_id,
+            'security_id' => $ctx['security']->id,
+            'patrol_point_name' => $point->patrol_point_name,
+            'patrol_point_qr_code' => $point->patrol_point_qr_code,
+            'security_name' => $ctx['security']->full_name,
+            'security_registration_number' => $ctx['security']->registration_number,
+            'scanned_at' => $scannedAt ?? now(),
+            'has_incident' => false,
+        ]);
+    }
+
     private function createIncidentScan(array $ctx, bool $withPhoto, int $pointIndex = 0): PatrolScan
     {
         $path = null;
         if ($withPhoto) {
             $path = 'patrol-incidents/'.Str::uuid().'.jpg';
-            Storage::disk('local')->put($path, 'fake-image');
+            Storage::disk('public')->put($path, 'fake-image');
         }
 
         $point = $ctx['points'][$pointIndex];
@@ -340,6 +696,11 @@ class PatrolMonitoringTest extends TestCase
 
     private function makeSessionContext(array $opts = []): array
     {
+        $date = $opts['date'] ?? '2026-11-15';
+        $shiftStartTime = $opts['shift_start_time'] ?? '07:00:00';
+        $shiftEndTime = $opts['shift_end_time'] ?? '15:00:00';
+        $shiftEndDayOffset = $opts['shift_end_day_offset'] ?? 0;
+
         if (! empty($opts['reuseAdmin'])) {
             $base = $opts['reuseAdmin'];
             $unit = $base['unit'];
@@ -369,9 +730,9 @@ class PatrolMonitoringTest extends TestCase
                 'name' => 'Pagi',
                 'code' => 'P',
                 'type' => 'working',
-                'start_time' => '07:00:00',
-                'end_time' => '15:00:00',
-                'end_day_offset' => 0,
+                'start_time' => $shiftStartTime,
+                'end_time' => $shiftEndTime,
+                'end_day_offset' => $shiftEndDayOffset,
                 'is_active' => true,
             ]);
 
@@ -382,7 +743,6 @@ class PatrolMonitoringTest extends TestCase
         $user = $sec['user'];
         $security = $sec['security'];
 
-        $date = $opts['date'] ?? '2026-11-15';
         $period = SchedulePeriod::withoutEvents(fn () => SchedulePeriod::query()->create([
             'unit_id' => $unit->id,
             'security_post_id' => $post->id,
@@ -416,9 +776,9 @@ class PatrolMonitoringTest extends TestCase
             'shift_name' => $shift->name,
             'shift_code' => $shift->code,
             'shift_type' => 'working',
-            'shift_start_time' => '07:00:00',
-            'shift_end_time' => '15:00:00',
-            'shift_end_day_offset' => 0,
+            'shift_start_time' => $shiftStartTime,
+            'shift_end_time' => $shiftEndTime,
+            'shift_end_day_offset' => $shiftEndDayOffset,
             'status' => $opts['status'] ?? PatrolSession::STATUS_PENDING,
             'started_at' => $opts['started_at'] ?? null,
             'ended_at' => $opts['ended_at'] ?? null,

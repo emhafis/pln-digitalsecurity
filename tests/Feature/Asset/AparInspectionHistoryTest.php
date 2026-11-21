@@ -248,14 +248,14 @@ class AparInspectionHistoryTest extends SchedulingTestCase
 
     public function test_authorized_user_can_access_inspection_photo(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->createUnit();
         $security = $this->createSecurity($unit);
         $apar = $this->createApar($unit);
         $inspection = $this->createInspection($apar, $security);
 
         $path = AssetInspectionPhotoStorage::directory('apar', (int) $apar->id) . '/' . Str::uuid() . '.jpg';
-        Storage::disk('local')->put($path, 'fake-image-bytes');
+        Storage::disk('public')->put($path, 'fake-image-bytes');
         $photo = $this->attachPhoto($inspection, $path);
 
         $response = $this->actingAs($security->user)->get("/app/apar/inspection-photos/{$photo->id}");
@@ -266,7 +266,7 @@ class AparInspectionHistoryTest extends SchedulingTestCase
 
     public function test_unauthorized_user_cannot_access_inspection_photo(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->createUnit();
         $other = $this->createUnit();
         $security = $this->createSecurity($unit);
@@ -275,7 +275,7 @@ class AparInspectionHistoryTest extends SchedulingTestCase
         $inspection = $this->createInspection($apar, $otherSecurity);
 
         $path = AssetInspectionPhotoStorage::directory('apar', (int) $apar->id) . '/' . Str::uuid() . '.jpg';
-        Storage::disk('local')->put($path, 'secret');
+        Storage::disk('public')->put($path, 'secret');
         $photo = $this->attachPhoto($inspection, $path);
 
         $this->actingAs($security->user)->get("/app/apar/inspection-photos/{$photo->id}")->assertNotFound();
@@ -286,13 +286,13 @@ class AparInspectionHistoryTest extends SchedulingTestCase
 
     public function test_photo_endpoint_rejects_arbitrary_or_unmanaged_paths(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $unit = $this->createUnit();
         $security = $this->createSecurity($unit);
         $apar = $this->createApar($unit);
         $inspection = $this->createInspection($apar, $security);
 
-        Storage::disk('local')->put('secrets/config.txt', 'top-secret');
+        Storage::disk('public')->put('secrets/config.txt', 'top-secret');
         $photo = $this->attachPhoto($inspection, 'secrets/config.txt');
 
         $this->actingAs($security->user)->get("/app/apar/inspection-photos/{$photo->id}")->assertNotFound();

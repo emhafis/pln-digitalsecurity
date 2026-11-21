@@ -1,5 +1,6 @@
-﻿<?php
+<?php
 
+use App\Http\Controllers\Admin\AnnouncementController as AdminAnnouncementController;
 use App\Http\Controllers\Admin\AparController;
 use App\Http\Controllers\Admin\AparInspectionController;
 use App\Http\Controllers\Admin\AparDocumentController;
@@ -18,8 +19,8 @@ use App\Http\Controllers\Admin\PatrolPointController;
 use App\Http\Controllers\Admin\PatrolReportController;
 use App\Http\Controllers\Admin\PatrolSessionController;
 use App\Http\Controllers\Admin\ScheduleCalendarController;
-use App\Http\Controllers\Admin\ScheduleGenerationController;
-use App\Http\Controllers\Admin\ScheduleMemberController;
+
+
 use App\Http\Controllers\Admin\SchedulePatternController;
 use App\Http\Controllers\Admin\SchedulePeriodController;
 use App\Http\Controllers\Admin\SecurityController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\Admin\SecurityTeamController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\App\AnnouncementController as AppAnnouncementController;
 use App\Http\Controllers\App\AparController as AppAparController;
 use App\Http\Controllers\App\AparInspectionController as AppAparInspectionController;
 use App\Http\Controllers\App\AparDocumentController as AppAparDocumentController;
@@ -42,8 +44,14 @@ use App\Http\Controllers\App\QrScanController as AppQrScanController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Guest\GuestBookController;
 use App\Http\Controllers\Guest\GuestCheckOutController;
+use App\Http\Controllers\StorageController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+Route::get('/storage/{path}', [StorageController::class, 'show'])
+    ->where('path', '.*')
+    ->middleware(['web', 'auth'])
+    ->name('storage.show');
 
 Route::get('/', function () {
     if (auth()->check()) {
@@ -121,6 +129,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/security-post/{id}/edit', [SecurityPostController::class, 'edit'])->whereNumber('id')->name('security-post.edit');
         Route::put('/security-post/{id}', [SecurityPostController::class, 'update'])->whereNumber('id')->name('security-post.update');
         Route::delete('/security-post/{id}', [SecurityPostController::class, 'destroy'])->whereNumber('id')->name('security-post.destroy');
+        Route::get('/security-post/{id}', [SecurityPostController::class, 'show'])->whereNumber('id')->name('security-post.show');
 
         Route::get('/security-team', [SecurityTeamController::class, 'index'])->name('security-team.index');
         Route::post('/security-team', [SecurityTeamController::class, 'store'])->name('security-team.store');
@@ -128,6 +137,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/security-team/{id}/edit', [SecurityTeamController::class, 'edit'])->whereNumber('id')->name('security-team.edit');
         Route::put('/security-team/{id}', [SecurityTeamController::class, 'update'])->whereNumber('id')->name('security-team.update');
         Route::delete('/security-team/{id}', [SecurityTeamController::class, 'destroy'])->whereNumber('id')->name('security-team.destroy');
+        Route::get('/security-team/{id}', [SecurityTeamController::class, 'show'])->whereNumber('id')->name('security-team.show');
 
         Route::get('/shift', [ShiftController::class, 'index'])->name('shift.index');
         Route::post('/shift', [ShiftController::class, 'store'])->name('shift.store');
@@ -135,6 +145,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/shift/{id}/edit', [ShiftController::class, 'edit'])->whereNumber('id')->name('shift.edit');
         Route::put('/shift/{id}', [ShiftController::class, 'update'])->whereNumber('id')->name('shift.update');
         Route::delete('/shift/{id}', [ShiftController::class, 'destroy'])->whereNumber('id')->name('shift.destroy');
+        Route::get('/shift/{id}', [ShiftController::class, 'show'])->whereNumber('id')->name('shift.show');
 
         Route::get('/schedule-pattern', [SchedulePatternController::class, 'index'])->name('schedule-pattern.index');
         Route::post('/schedule-pattern', [SchedulePatternController::class, 'store'])->name('schedule-pattern.store');
@@ -142,6 +153,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/schedule-pattern/{id}/edit', [SchedulePatternController::class, 'edit'])->whereNumber('id')->name('schedule-pattern.edit');
         Route::put('/schedule-pattern/{id}', [SchedulePatternController::class, 'update'])->whereNumber('id')->name('schedule-pattern.update');
         Route::delete('/schedule-pattern/{id}', [SchedulePatternController::class, 'destroy'])->whereNumber('id')->name('schedule-pattern.destroy');
+        Route::get('/schedule-pattern/{id}', [SchedulePatternController::class, 'show'])->whereNumber('id')->name('schedule-pattern.show');
 
         Route::get('/guest-book', [AdminGuestBookController::class, 'index'])->name('guest-book.index');
         Route::get('/guest-book/{id}', [AdminGuestBookController::class, 'show'])->whereNumber('id')->name('guest-book.show');
@@ -154,19 +166,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/schedule-period/bulk-create', [SchedulePeriodController::class, 'bulkCreate'])->name('schedule-period.bulk-create');
         Route::post('/schedule-period/bulk', [SchedulePeriodController::class, 'bulkStore'])->name('schedule-period.bulk-store');
         Route::post('/schedule-period/{id}/activate', [SchedulePeriodController::class, 'activate'])->whereNumber('id')->name('schedule-period.activate');
-        Route::post('/schedule-period/{id}/generate', [ScheduleGenerationController::class, 'store'])->whereNumber('id')->name('schedule-period.generate');
+        Route::get('/schedule-period/{id}/generate', [SchedulePeriodController::class, 'generatePreview'])->whereNumber('id')->name('schedule-period.generate.preview');
+        Route::post('/schedule-period/{id}/generate', [SchedulePeriodController::class, 'generate'])->whereNumber('id')->name('schedule-period.generate');
         Route::get('/schedule-period/{id}/edit', [SchedulePeriodController::class, 'edit'])->whereNumber('id')->name('schedule-period.edit');
         Route::put('/schedule-period/{id}', [SchedulePeriodController::class, 'update'])->whereNumber('id')->name('schedule-period.update');
+        Route::patch('/schedule-period/{id}/status', [SchedulePeriodController::class, 'updateStatus'])->whereNumber('id')->name('schedule-period.status');
         Route::delete('/schedule-period/{id}', [SchedulePeriodController::class, 'destroy'])->whereNumber('id')->name('schedule-period.destroy');
         Route::get('/schedule-period/{id}', [SchedulePeriodController::class, 'show'])->whereNumber('id')->name('schedule-period.show');
 
-        Route::get('/schedule-period-member', [ScheduleMemberController::class, 'index'])->name('schedule-member.index');
-        Route::post('/schedule-period-member', [ScheduleMemberController::class, 'store'])->name('schedule-member.store');
-        Route::post('/schedule-period-member/bulk', [ScheduleMemberController::class, 'bulkStore'])->name('schedule-member.bulk-store');
-        Route::get('/schedule-period-member/create', [ScheduleMemberController::class, 'create'])->name('schedule-member.create');
-        Route::get('/schedule-period-member/{id}/edit', [ScheduleMemberController::class, 'edit'])->whereNumber('id')->name('schedule-member.edit');
-        Route::put('/schedule-period-member/{id}', [ScheduleMemberController::class, 'update'])->whereNumber('id')->name('schedule-member.update');
-        Route::delete('/schedule-period-member/{id}', [ScheduleMemberController::class, 'destroy'])->whereNumber('id')->name('schedule-member.destroy');
 
         Route::get('/schedule-calendar', [ScheduleCalendarController::class, 'index'])->name('schedule-calendar.index');
 
@@ -207,12 +214,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/guest-book/qr/{unit}/regenerate-checkin', [GuestBookQrController::class, 'regenerateCheckIn'])->whereNumber('unit')->name('guest-book.qr.regenerate-checkin');
             Route::post('/guest-book/qr/{unit}/regenerate-checkout', [GuestBookQrController::class, 'regenerateCheckOut'])->whereNumber('unit')->name('guest-book.qr.regenerate-checkout');
             Route::post('/guest-book/qr/backfill', [GuestBookQrController::class, 'backfill'])->name('guest-book.qr.backfill');
+
+            Route::get('/announcements', [AdminAnnouncementController::class, 'index'])->name('announcements.index');
+            Route::get('/announcements/create', [AdminAnnouncementController::class, 'create'])->name('announcements.create');
+            Route::post('/announcements', [AdminAnnouncementController::class, 'store'])->name('announcements.store');
+            Route::get('/announcements/{announcement}/edit', [AdminAnnouncementController::class, 'edit'])->whereNumber('announcement')->name('announcements.edit');
+            Route::put('/announcements/{announcement}', [AdminAnnouncementController::class, 'update'])->whereNumber('announcement')->name('announcements.update');
+            Route::delete('/announcements/{announcement}', [AdminAnnouncementController::class, 'destroy'])->whereNumber('announcement')->name('announcements.destroy');
         });
 
         Route::get('/guest-book/qr', [GuestBookQrController::class, 'index'])->name('guest-book.qr.index');
         Route::get('/guest-book/qr/{unit}', [GuestBookQrController::class, 'show'])->whereNumber('unit')->name('guest-book.qr.show');
         Route::get('/guest-book/qr/{unit}/download/{type}', [GuestBookQrController::class, 'download'])->whereNumber('unit')->name('guest-book.qr.download');
 
+
+        Route::get('/monitoring/apar', [AparInspectionController::class, 'monitoring'])->name('monitoring.apar.index');
+        Route::get('/monitoring/apar/{inspection}', [AparInspectionController::class, 'monitoringShow'])->whereNumber('inspection')->name('monitoring.apar.show');
+        Route::get('/monitoring/hydrant', [HydrantInspectionController::class, 'monitoring'])->name('monitoring.hydrant.index');
+        Route::get('/monitoring/hydrant/{inspection}', [HydrantInspectionController::class, 'monitoringShow'])->whereNumber('inspection')->name('monitoring.hydrant.show');
 
         Route::get('/apar', [AparController::class, 'index'])->name('apar.index');
         Route::post('/apar', [AparController::class, 'store'])->name('apar.store');
@@ -277,6 +296,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware(['role:security', 'security.profile'])->prefix('app')->name('app.')->group(function () {
         Route::get('/', [AppDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/announcements', [AppAnnouncementController::class, 'index'])->name('announcements.index');
+        Route::get('/announcements/{id}', [AppAnnouncementController::class, 'show'])->whereNumber('id')->name('announcements.show');
         Route::get('/profile', [AppProfileController::class, 'show'])->name('profile');
         Route::get('/profile/password', [AppProfileController::class, 'password'])->name('profile.password');
         Route::post('/profile/password', [AppProfileController::class, 'updatePassword'])->name('profile.password.update');

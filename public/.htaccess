@@ -5,6 +5,9 @@
 
     RewriteEngine On
 
+    # Force storage requests through Laravel for authentication.
+    RewriteRule ^storage/ index.php [L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
@@ -17,6 +20,9 @@
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
+
+    # Block direct browser access to stored operational photos.
+    RewriteRule ^storage/ - [F,L]
 
     # Send Requests To Front Controller...
     RewriteCond %{REQUEST_FILENAME} !-d

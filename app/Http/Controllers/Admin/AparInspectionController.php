@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Apar;
 use App\Models\AparInspection;
 use App\Models\AparInspectionPhoto;
+use App\Models\Unit;
 use App\Support\AssetInspectionPhotoStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -50,6 +51,64 @@ class AparInspectionController extends Controller
         ]);
     }
 
+    public function monitoring(Request $request): Response
+    {
+        $scope = $this->assetUnitScope($request);
+        $filters = $this->monitoringFilters($request, $scope);
+
+        $query = AparInspection::query()
+            ->with(['security:id,full_name', 'apar:id,apar_code,unit_id,is_active'])
+            ->withCount('photos')
+            ->when($scope !== null, fn ($q) => $q->whereIn('apar_inspections.unit_id', $scope))
+            ->when($filters['unit_id'] !== null, fn ($q) => $q->where('apar_inspections.unit_id', $filters['unit_id']))
+            ->when($filters['search'] !== '', function ($q) use ($filters) {
+                $search = $filters['search'];
+                $q->where(function ($q) use ($search) {
+                    $q->where('apar_code_snapshot', 'like', "%{$search}%")
+                        ->orWhere('placement_snapshot', 'like', "%{$search}%")
+                        ->orWhere('unit_name_snapshot', 'like', "%{$search}%")
+                        ->orWhereHas('security', fn ($sq) => $sq->where('full_name', 'like', "%{$search}%"));
+                });
+            })
+            ->when($filters['result'] !== '', fn ($q) => $q->where('result', $filters['result']))
+            ->when($filters['date_from'] !== '', fn ($q) => $q->whereDate('inspected_at', '>=', $filters['date_from']))
+            ->when($filters['date_to'] !== '', fn ($q) => $q->whereDate('inspected_at', '<=', $filters['date_to']));
+
+        $summary = [
+            'total' => (clone $query)->count(),
+            'ok' => (clone $query)->where('result', 'ok')->count(),
+            'not_ok' => (clone $query)->where('result', 'not_ok')->count(),
+        ];
+
+        $paginator = $query
+            ->orderByDesc('inspected_at')
+            ->orderByDesc('id')
+            ->paginate(20)
+            ->withQueryString();
+
+        return Inertia::render('Admin/Monitoring/Apar/Index', [
+            'items' => $paginator->getCollection()->map(fn (AparInspection $inspection) => $this->monitoringListItem($inspection)),
+            'meta' => $this->meta($paginator),
+            'filters' => $filters,
+            'units' => $this->units($scope),
+            'summary' => $summary,
+        ]);
+    }
+
+    public function monitoringShow(Request $request, int $inspection): Response
+    {
+        $scope = $this->assetUnitScope($request);
+        $record = $this->findAuthorizedInspection($inspection, $scope);
+
+        return Inertia::render('Admin/Monitoring/Apar/Show', [
+            'inspection' => $this->detailItem($request, $record, 'admin'),
+            'back' => [
+                'href' => route('admin.monitoring.apar.index'),
+                'label' => 'Monitoring APAR',
+            ],
+        ]);
+    }
+
     public function show(Request $request, int $inspection): Response
     {
         $scope = $this->assetUnitScope($request);
@@ -75,11 +134,11 @@ class AparInspectionController extends Controller
         }
 
         $path = $this->authorizedPhotoPath($photoModel);
-        if ($path === null || ! Storage::disk('local')->exists($path)) {
+        if ($path === null || ! Storage::disk('public')->exists($path)) {
             abort(404);
         }
 
-        return Storage::disk('local')->response($path);
+        return Storage::disk('public')->response($path);
     }
 
     private function findAuthorizedInspection(int $id, ?array $scope): AparInspection
@@ -151,6 +210,68 @@ class AparInspectionController extends Controller
     }
 
     /**
+     * @param  array<int,int>|null  $scope
+     * @return array{search:string,result:string,date_from:string,date_to:string,unit_id:?int}
+     */
+    private function monitoringFilters(Request $request, ?array $scope): array
+    {
+        $filters = $this->filtersPayload($request);
+        $filters['date_from'] = $this->validDate($filters['date_from']);
+        $filters['date_to'] = $this->validDate($filters['date_to']);
+        $filters['unit_id'] = $this->monitoringUnitId($request, $scope);
+
+        return $filters;
+    }
+
+    /**
+     * @param  array<int,int>|null  $scope
+     */
+    private function monitoringUnitId(Request $request, ?array $scope): ?int
+    {
+        $raw = trim((string) $request->query('unit_id', ''));
+
+        if ($raw === '' || ! is_numeric($raw)) {
+            return null;
+        }
+
+        $candidate = (int) $raw;
+        if ($scope !== null && ! in_array($candidate, $scope, true)) {
+            return null;
+        }
+
+        return $candidate;
+    }
+
+    private function validDate(string $value): string
+    {
+        if ($value === '') {
+            return '';
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::createFromFormat('Y-m-d', $value)->toDateString();
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    /**
+     * @param  array<int,int>|null  $scope
+     * @return array<int, array{value:int,label:string}>
+     */
+    private function units(?array $scope): array
+    {
+        return Unit::query()
+            ->when($scope !== null, fn ($query) => $query->whereIn('id', $scope))
+            ->orderBy('unit_name')
+            ->get(['id', 'unit_name'])
+            ->map(fn (Unit $unit) => [
+                'value' => $unit->id,
+                'label' => $unit->unit_name,
+            ])->values()->toArray();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function listItem(AparInspection $inspection, bool $withLinks): array
@@ -166,6 +287,30 @@ class AparInspectionController extends Controller
             'result_label' => $inspection->result === 'ok' ? 'Baik' : 'Tidak Baik',
             'photos_count' => (int) ($inspection->photos_count ?? 0),
             'detail_url' => $withLinks ? route('admin.apar-inspections.show', $inspection->id) : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function monitoringListItem(AparInspection $inspection): array
+    {
+        return [
+            'id' => $inspection->id,
+            'apar_id' => $inspection->apar_id,
+            'apar_code' => $inspection->apar?->apar_code ?? $inspection->apar_code_snapshot,
+            'apar_type' => $inspection->apar_type_snapshot,
+            'brand' => $inspection->brand_snapshot,
+            'capacity' => $inspection->capacity_snapshot,
+            'placement' => $inspection->placement_snapshot,
+            'inspected_at' => $inspection->inspected_at?->format('d M Y, H:i'),
+            'inspected_at_raw' => $inspection->inspected_at?->toIso8601String(),
+            'officer_name' => $inspection->security?->full_name ?? '-',
+            'unit_name' => $inspection->unit_name_snapshot ?: '-',
+            'result' => $inspection->result,
+            'result_label' => $inspection->result === 'ok' ? 'Baik' : 'Tidak Baik',
+            'photos_count' => (int) ($inspection->photos_count ?? 0),
+            'detail_url' => route('admin.monitoring.apar.show', $inspection->id),
         ];
     }
 
@@ -207,7 +352,7 @@ class AparInspectionController extends Controller
             'photos' => $inspection->photos->map(fn ($photo) => [
                 'id' => $photo->id,
                 'caption' => $photo->caption,
-                'url' => route($photoRoute, $photo->id),
+                'url' => '/storage/' . $photo->photo_path,
             ])->values(),
         ];
     }

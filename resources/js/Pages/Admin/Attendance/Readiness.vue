@@ -155,7 +155,7 @@ function statusLabel(period) {
                         />
                     </label>
                     <div class="flex items-end gap-2">
-                        <Button variant="secondary" @click="applyFilter">Terapkan</Button>
+                        <Button @click="applyFilter">Terapkan</Button>
                     </div>
                 </div>
 

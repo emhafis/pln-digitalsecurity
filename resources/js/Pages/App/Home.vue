@@ -15,6 +15,7 @@ const props = defineProps({
     post: { type: Object, default: null },
     attendance: { type: Object, default: null },
     windows: { type: Object, default: null },
+    announcements: { type: Array, default: () => [] },
 });
 </script>
 
@@ -34,7 +35,7 @@ const props = defineProps({
                     :windows="props.windows"
                 />
                 <QuickActions />
-                <AnnouncementSection />
+                <AnnouncementSection :announcements="props.announcements" />
             </main>
         </div>
 

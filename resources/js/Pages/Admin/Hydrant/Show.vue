@@ -4,6 +4,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
 import Card from '@/Components/Admin/Card.vue';
 import FlashMessage from '@/Components/Admin/FlashMessage.vue';
+import ImageWithFallback from '@/Components/Admin/ImageWithFallback.vue';
 
 const props = defineProps({
     hydrant: { type: Object, required: true },
@@ -86,10 +87,7 @@ function openQrPdf() {
                 <div class="space-y-6">
                     <Card>
                         <template #title>Foto Hydrant</template>
-                        <div v-if="hydrant.photo_url">
-                            <img :src="hydrant.photo_url" alt="Foto Hydrant" class="w-full rounded-md border object-cover" />
-                        </div>
-                        <p v-else class="text-sm text-gray-500">Tidak ada foto.</p>
+                        <ImageWithFallback :src="hydrant.photo_url" alt="Foto Hydrant" class="h-56 w-full rounded-md border object-cover" />
                     </Card>
 
                     <Card>

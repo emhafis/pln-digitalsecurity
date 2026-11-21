@@ -9,10 +9,10 @@ use App\Models\AparInspection;
 use App\Models\Security;
 use App\Support\AssetInspectionPhotoStorage;
 use App\Support\AssetInspectionRules;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -168,7 +168,7 @@ class AparController extends Controller
                 }
 
                 foreach ($uploaded as $file) {
-                    $path = AssetInspectionPhotoStorage::store($file, 'apar', (int) $apar->id);
+                    $path = AssetInspectionPhotoStorage::store($file, 'apar', (int) $apar->id, $security->full_name, $apar->apar_code);
                     $storedPaths[] = $path;
                     $inspection->photos()->create([
                         'photo_path' => $path,
@@ -223,7 +223,7 @@ class AparController extends Controller
             'expiry_date' => $apar->expiry_date?->format('Y-m-d'),
             'placement' => $apar->placement,
             'is_active' => (bool) $apar->is_active,
-            'photo_url' => $apar->photo ? Storage::disk('public')->url($apar->photo) : null,
+            'photo_url' => PublicStorageUrl::for($apar->photo),
         ];
     }
 

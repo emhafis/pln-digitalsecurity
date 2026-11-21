@@ -232,7 +232,7 @@ class PatrolSessionOperationService
 
         $storedPhotoPaths = [];
         if ($hasIncident && ! empty($photos)) {
-            $storedPhotoPaths = $this->storeIncidentPhotos($photos);
+            $storedPhotoPaths = $this->storeIncidentPhotos($photos, $security->full_name);
         }
 
         try {
@@ -475,11 +475,11 @@ class PatrolSessionOperationService
      * @param  array<int, UploadedFile>  $photos
      * @return array<int, string>
      */
-    private function storeIncidentPhotos(array $photos): array
+    private function storeIncidentPhotos(array $photos, ?string $personName = null): array
     {
         $paths = [];
 
-        foreach ($photos as $index => $file) {
+        foreach ($photos as $file) {
             if (! $file instanceof UploadedFile) {
                 $this->cleanupPhotos($paths);
                 throw ValidationException::withMessages(['photos' => 'File foto insiden tidak valid.']);
@@ -487,10 +487,13 @@ class PatrolSessionOperationService
 
             $this->validateIncidentPhoto($file);
             $ext = \App\Support\UploadFilename::extensionFromUpload($file, 'jpg');
-            $filename = \App\Support\UploadFilename::make(['FOTO-PATROLI-INSIDEN', $index + 1], $ext);
+            $filename = \App\Support\UploadFilename::dated([
+                'PATROLI',
+                \App\Support\UploadFilename::short($personName ?? '', 12),
+            ], $ext);
             $directory = 'patrol-incidents';
             $path = $directory.'/'.$filename;
-            $stored = Storage::disk('local')->putFileAs($directory, $file, $filename);
+            $stored = Storage::disk('public')->putFileAs($directory, $file, $filename);
 
             if ($stored === false) {
                 $this->cleanupPhotos($paths);
@@ -526,9 +529,9 @@ class PatrolSessionOperationService
     private function cleanupPhotos(array $paths): void
     {
         foreach ($paths as $path) {
-            if ($path && Storage::disk('local')->exists($path)) {
-                Storage::disk('local')->delete($path);
-            }
+if ($path && Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
         }
     }
 

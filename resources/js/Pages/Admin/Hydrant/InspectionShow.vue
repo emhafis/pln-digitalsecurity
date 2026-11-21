@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
 import Card from '@/Components/Admin/Card.vue';
+import ImageWithFallback from '@/Components/Admin/ImageWithFallback.vue';
 
 defineProps({
     inspection: { type: Object, required: true },
@@ -65,7 +66,7 @@ function formatDate(d) {
                     <template #title>Foto Inspeksi</template>
                     <div v-if="inspection.photos && inspection.photos.length" class="grid grid-cols-2 gap-2">
                         <a v-for="photo in inspection.photos" :key="photo.id" :href="photo.url" target="_blank" rel="noopener" class="block overflow-hidden rounded-md border">
-                            <img :src="photo.url" alt="Foto inspeksi" class="h-28 w-full object-cover" />
+                            <ImageWithFallback :src="photo.url" alt="Foto inspeksi" class="h-28 w-full object-cover" />
                         </a>
                     </div>
                     <p v-else class="text-sm text-gray-500">Tidak ada foto.</p>

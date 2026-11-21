@@ -7,16 +7,20 @@ use Illuminate\Support\Facades\Storage;
 
 class GuestBookFileStorage
 {
-    public const DISK = 'local';
+    public const DISK = 'public';
     public const BASE_DIRECTORY = 'guest-book';
 
-    public static function storeUploadedFile(UploadedFile $file, string $type, int $unitId): string
+    public static function storeUploadedFile(UploadedFile $file, string $type, int $unitId, ?string $personName = null): string
     {
         $type = self::normalizeType($type);
         $directory = self::BASE_DIRECTORY.'/'.$type.'/'.$unitId;
 
         $extension = UploadFilename::extensionFromUpload($file, 'bin');
-        $filename = UploadFilename::make(['GUESTBOOK', $type, 'UNIT-'.$unitId], $extension);
+        $code = $type === 'selfie' ? 'GB-FOTO' : 'GB-TTD';
+        $filename = UploadFilename::dated([
+            $code,
+            UploadFilename::short($personName ?? 'TAMU', 12),
+        ], $extension);
         $stored = Storage::disk(self::DISK)->putFileAs($directory, $file, $filename);
         if ($stored === false) {
             throw new \RuntimeException('Gagal menyimpan berkas.');
@@ -28,7 +32,7 @@ class GuestBookFileStorage
     /**
      * Store a base64 data URL (e.g. canvas signature) and return its relative path.
      */
-    public static function storeDataUrl(string $dataUrl, string $type, int $unitId): ?string
+    public static function storeDataUrl(string $dataUrl, string $type, int $unitId, ?string $personName = null): ?string
     {
         $type = self::normalizeType($type);
         if (! preg_match('/^data:(image\/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+\/=]+)$/', $dataUrl, $m)) {
@@ -48,7 +52,11 @@ class GuestBookFileStorage
         };
 
         $directory = self::BASE_DIRECTORY.'/'.$type.'/'.$unitId;
-        $filename = UploadFilename::make(['GUESTBOOK', $type, 'UNIT-'.$unitId], $extension);
+        $code = $type === 'selfie' ? 'GB-FOTO' : 'GB-TTD';
+        $filename = UploadFilename::dated([
+            $code,
+            UploadFilename::short($personName ?? 'TAMU', 12),
+        ], $extension);
         $path = $directory.'/'.$filename;
 
         $stored = Storage::disk(self::DISK)->put($path, $binary);

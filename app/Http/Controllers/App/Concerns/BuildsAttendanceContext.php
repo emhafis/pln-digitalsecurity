@@ -9,6 +9,7 @@ use App\Models\Schedule;
 use App\Models\Security;
 use App\Models\Shift;
 use App\Support\AttendanceClock;
+use App\Support\PublicStorageUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -32,6 +33,7 @@ trait BuildsAttendanceContext
                 'id' => $security->id,
                 'full_name' => $security->full_name,
                 'registration_number' => $security->registration_number,
+                'photo_url' => PublicStorageUrl::for($security->photo),
             ] : null,
             'operational_date' => [
                 'value' => $operationalDate,
