@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import { compressImage, validateImageFile } from '@/Utils/imageCompressor';
 
@@ -22,9 +22,11 @@ const form = useForm({
 });
 
 const canvasRef = ref(null);
+const selfieInputRef = ref(null);
 const drawing = ref(false);
 const photoProcessing = ref(false);
 const photoError = ref('');
+const photoPreviewUrl = ref('');
 
 function getPos(e) {
     const canvas = canvasRef.value;
@@ -37,6 +39,32 @@ function draw(e) { if (!drawing.value) return; e.preventDefault(); const c = can
 function endDraw() { drawing.value = false; }
 function clearSignature() { const canvas = canvasRef.value; const c = canvas.getContext('2d'); c.clearRect(0,0,canvas.width,canvas.height); form.signature = ''; }
 function syncSignature() { const canvas = canvasRef.value; const blank = document.createElement('canvas'); blank.width = canvas.width; blank.height = canvas.height; if (canvas.toDataURL() !== blank.toDataURL()) { form.signature = canvas.toDataURL('image/png'); } else { form.signature = ''; } }
+function clearPhotoPreview() {
+    if (photoPreviewUrl.value) {
+        URL.revokeObjectURL(photoPreviewUrl.value);
+        photoPreviewUrl.value = '';
+    }
+}
+
+function clearSelectedPhoto() {
+    form.selfie = null;
+    photoError.value = '';
+    form.clearErrors('selfie');
+    if (selfieInputRef.value) selfieInputRef.value.value = '';
+}
+
+watch(() => form.selfie, (file, oldFile) => {
+    clearPhotoPreview();
+    if (file instanceof File) {
+        photoPreviewUrl.value = URL.createObjectURL(file);
+    }
+    void oldFile;
+});
+
+onBeforeUnmount(() => {
+    clearPhotoPreview();
+});
+
 async function onSelfie(e) {
     const file = e.target.files?.[0] || null;
     photoError.value = '';
@@ -139,8 +167,15 @@ onMounted(() => {
                 <section class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
                     <div>
                         <label class="mb-1 block text-xs text-gray-500">Selfie (opsional)</label>
-                        <input type="file" accept="image/*" capture="user" class="block w-full text-sm" @change="onSelfie" />
+                        <input ref="selfieInputRef" type="file" accept="image/*" capture="user" class="block w-full text-sm" @change="onSelfie" />
                         <p class="mt-1 text-[11px] text-gray-400">Semua format gambar didukung (termasuk HEIC), maks 10 MB. Foto akan dikonversi ke JPG dan dikompresi otomatis ke ukuran kecil sebelum dikirim.</p>
+                        <div v-if="photoPreviewUrl" class="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                            <img :src="photoPreviewUrl" alt="Preview selfie" class="h-48 w-full object-cover" />
+                            <div class="flex items-center justify-between gap-3 px-3 py-2 text-[11px] text-gray-500">
+                                <span class="truncate">{{ form.selfie?.name || 'Foto selfie' }}</span>
+                                <button type="button" class="shrink-0 font-medium text-[#1D567F]" @click="clearSelectedPhoto">Hapus foto</button>
+                            </div>
+                        </div>
                         <p v-if="photoProcessing" class="mt-1 text-[11px] text-[#1D567F]">Memproses foto...</p>
                         <p v-if="photoError" class="mt-1 text-[11px] text-red-600">{{ photoError }}</p>
                     </div>
