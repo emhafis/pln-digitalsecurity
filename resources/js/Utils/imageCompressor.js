@@ -1,32 +1,39 @@
 ﻿/**
- * Reusable browser-side image compressor using HTML Canvas.
- * Returns a compressed JPEG File/Blob while preserving aspect ratio.
+ * Browser-side image processor for camera/photo uploads.
+ * Converts all supported images (including HEIC/HEIF when possible) to compressed JPEG.
  */
 export const DEFAULT_COMPRESS_OPTIONS = {
-    maxWidth: 1600,
-    maxHeight: 1600,
-    quality: 0.8,
+    maxWidth: 1280,
+    maxHeight: 1280,
+    quality: 0.72,
     mimeType: 'image/jpeg',
-    maxOutputBytes: 1024 * 1024, // ~1MB
-    minCompressBytes: 128 * 1024,
+    maxOutputBytes: 1024 * 1024, // target ~1MB
+    minQuality: 0.45,
 };
 
-const SUPPORTED_INPUT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const HEIC_TYPES = ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'];
+const HEIC_EXTENSIONS = ['.heic', '.heif'];
 
-function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
-        reader.readAsDataURL(file);
-    });
+function isHeicFile(file) {
+    const type = (file?.type || '').toLowerCase();
+    if (HEIC_TYPES.includes(type)) return true;
+    const name = (file?.name || '').toLowerCase();
+    return HEIC_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+function isImageFile(file) {
+    if (!file) return false;
+    const type = (file.type || '').toLowerCase();
+    if (type.startsWith('image/')) return true;
+    const name = (file.name || '').toLowerCase();
+    return /\.(jpe?g|png|webp|gif|bmp|avif|tiff?|heic|heif)$/i.test(name);
 }
 
 function loadImage(src) {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('Gagal memuat gambar untuk kompresi.'));
+        img.onerror = () => reject(new Error('Gagal memuat gambar untuk diproses.'));
         img.src = src;
     });
 }
@@ -54,120 +61,134 @@ function canvasToBlob(canvas, mimeType, quality) {
 }
 
 function replaceExtension(name, ext) {
-    const base = (name || 'incident-photo').replace(/\.[^.]+$/, '');
+    const base = (name || 'photo').replace(/\.[^.]+$/, '') || 'photo';
     return `${base}.${ext}`;
+}
+
+async function decodeToImageSource(file) {
+    if (typeof createImageBitmap === 'function') {
+        try {
+            return await createImageBitmap(file, { imageOrientation: 'from-image' });
+        } catch (e) {
+            // fallback below
+        }
+    }
+    const url = URL.createObjectURL(file);
+    try {
+        return await loadImage(url);
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+}
+
+async function convertHeicToJpegFile(file) {
+    let heic2any;
+    try {
+        const mod = await import('heic2any');
+        heic2any = mod?.default ?? mod;
+    } catch (e) {
+        throw new Error('Format HEIC/HEIF belum bisa diproses di perangkat ini. Coba gunakan format JPG.');
+    }
+
+    const converted = await heic2any({
+        blob: file,
+        toType: 'image/jpeg',
+        quality: 0.92,
+    });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+    if (!(blob instanceof Blob)) {
+        throw new Error('Gagal mengonversi gambar HEIC/HEIF.');
+    }
+    return new File([blob], replaceExtension(file.name, 'jpg'), {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+    });
+}
+
+async function prepareSourceFile(file) {
+    if (!isHeicFile(file)) return file;
+    try {
+        await decodeToImageSource(file);
+        return file;
+    } catch (e) {
+        return await convertHeicToJpegFile(file);
+    }
+}
+
+async function drawToCanvas(sourceFile, maxWidth, maxHeight) {
+    const src = await decodeToImageSource(sourceFile);
+    const srcWidth = src.width;
+    const srcHeight = src.height;
+    const target = getTargetSize(srcWidth, srcHeight, maxWidth, maxHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = target.width;
+    canvas.height = target.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        if (typeof src.close === 'function') src.close();
+        throw new Error('Kanvas tidak tersedia untuk kompresi gambar.');
+    }
+    ctx.drawImage(src, 0, 0, target.width, target.height);
+    if (typeof src.close === 'function') src.close();
+    return { canvas, width: target.width, height: target.height, srcWidth, srcHeight, scaled: target.scaled };
 }
 
 export async function compressImage(file, options = {}) {
     if (!(file instanceof File) && !(file instanceof Blob)) {
         throw new Error('File gambar tidak valid.');
     }
-    if (file.type && !SUPPORTED_INPUT_TYPES.includes(file.type)) {
-        throw new Error('Format gambar tidak didukung. Gunakan JPG, PNG, atau WebP.');
+    if (!isImageFile(file)) {
+        throw new Error('File harus berupa gambar.');
     }
 
     const opts = { ...DEFAULT_COMPRESS_OPTIONS, ...options };
-    const mimeType = opts.mimeType || 'image/jpeg';
-    const outputExt = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+    const maxOutputBytes = Number(opts.maxOutputBytes) > 0 ? Number(opts.maxOutputBytes) : DEFAULT_COMPRESS_OPTIONS.maxOutputBytes;
+    const mimeType = 'image/jpeg';
+    const sourceFile = await prepareSourceFile(file);
 
-    let objectUrl = null;
-    try {
-        objectUrl = URL.createObjectURL(file);
-        let img;
-        if (typeof createImageBitmap === 'function') {
-            try {
-                img = await createImageBitmap(file, { imageOrientation: 'from-image' });
-            } catch (e) {
-                img = await loadImage(objectUrl);
-            }
+    let drawn = await drawToCanvas(sourceFile, opts.maxWidth, opts.maxHeight);
+    let quality = opts.quality;
+    let blob = await canvasToBlob(drawn.canvas, mimeType, quality);
+
+    let attempts = 0;
+    while (blob.size > maxOutputBytes && attempts < 6) {
+        if (quality > opts.minQuality + 0.01) {
+            quality = Math.max(opts.minQuality, quality - 0.1);
+        } else if (drawn.width > 640 || drawn.height > 640) {
+            const nextWidth = Math.max(640, Math.round(drawn.width * 0.85));
+            const nextHeight = Math.max(640, Math.round(drawn.height * 0.85));
+            drawn.canvas.width = 0;
+            drawn.canvas.height = 0;
+            drawn = await drawToCanvas(sourceFile, nextWidth, nextHeight);
+            quality = Math.max(opts.minQuality, quality);
         } else {
-            img = await loadImage(objectUrl);
+            break;
         }
-
-        const srcWidth = img.width;
-        const srcHeight = img.height;
-        const target = getTargetSize(srcWidth, srcHeight, opts.maxWidth, opts.maxHeight);
-
-        const canvas = document.createElement('canvas');
-        canvas.width = target.width;
-        canvas.height = target.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Kanvas tidak tersedia untuk kompresi gambar.');
-        }
-        ctx.drawImage(img, 0, 0, target.width, target.height);
-        if (typeof img.close === 'function') {
-            img.close();
-        }
-
-        let blob = await canvasToBlob(canvas, mimeType, opts.quality);
-        canvas.width = 0;
-        canvas.height = 0;
-
-        // Don't make it larger or "worse" when source is already efficient enough.
-        const alreadyEfficient = !target.scaled && file.size <= opts.maxOutputBytes && file.size <= blob.size;
-        if (alreadyEfficient) {
-            return {
-                file,
-                blob: file,
-                width: srcWidth,
-                height: srcHeight,
-                originalSize: file.size,
-                compressedSize: file.size,
-                wasCompressed: false,
-            };
-        }
-
-        // Try a couple lower qualities if still above cap (without changing dimensions again).
-        let quality = opts.quality;
-        let attempts = 0;
-        while (blob.size > opts.maxOutputBytes && quality > 0.45 && attempts < 3) {
-            quality = Math.max(0.45, quality - 0.15);
-            const c2 = document.createElement('canvas');
-            c2.width = target.width;
-            c2.height = target.height;
-            const ctx2 = c2.getContext('2d');
-            if (!ctx2) break;
-            const img2 = await loadImage(objectUrl);
-            ctx2.drawImage(img2, 0, 0, target.width, target.height);
-            blob = await canvasToBlob(c2, mimeType, quality);
-            c2.width = 0;
-            c2.height = 0;
-            attempts += 1;
-        }
-
-        if (blob.size > file.size && file.size <= opts.maxOutputBytes) {
-            return {
-                file,
-                blob: file,
-                width: srcWidth,
-                height: srcHeight,
-                originalSize: file.size,
-                compressedSize: file.size,
-                wasCompressed: false,
-            };
-        }
-
-        const outName = replaceExtension(file.name, outputExt);
-        const outFile = new File([blob], outName, { type: mimeType, lastModified: Date.now() });
-
-        return {
-            file: outFile,
-            blob,
-            width: target.width,
-            height: target.height,
-            originalSize: file.size,
-            compressedSize: blob.size,
-            wasCompressed: true,
-        };
-    } catch (error) {
-        if (error instanceof Error) throw error;
-        throw new Error('Gagal memproses kompresi gambar.');
-    } finally {
-        if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
-        }
+        blob = await canvasToBlob(drawn.canvas, mimeType, quality);
+        attempts += 1;
     }
+
+    drawn.canvas.width = 0;
+    drawn.canvas.height = 0;
+
+    if (blob.size > maxOutputBytes) {
+        throw new Error('Ukuran gambar masih terlalu besar setelah dikompresi. Coba ambil foto ulang.');
+    }
+
+    const outFile = new File([blob], replaceExtension(file.name, 'jpg'), {
+        type: mimeType,
+        lastModified: Date.now(),
+    });
+
+    return {
+        file: outFile,
+        blob,
+        width: drawn.width,
+        height: drawn.height,
+        originalSize: file.size || 0,
+        compressedSize: blob.size,
+        wasCompressed: true,
+    };
 }
 
 export function formatBytes(bytes) {
@@ -179,11 +200,11 @@ export function formatBytes(bytes) {
 
 export function validateImageFile(file, { maxInputBytes = 10 * 1024 * 1024 } = {}) {
     if (!file) return 'Pilih file gambar.';
-    if (!SUPPORTED_INPUT_TYPES.includes(file.type)) {
-        return 'Format gambar tidak didukung. Gunakan JPG, PNG, atau WebP.';
+    if (!isImageFile(file)) {
+        return 'File harus berupa gambar.';
     }
     if (file.size > maxInputBytes) {
-        return 'Ukuran file terlalu besar untuk diproses.';
+        return 'Ukuran file terlalu besar. Maksimal 10 MB.';
     }
     return null;
 }

@@ -21,7 +21,7 @@ class PatrolSessionOperationService
 {
     public const MAX_INCIDENT_PHOTOS = 5;
 
-    public const INCIDENT_PHOTO_MAX_BYTES = 1536 * 1024; // ~1.5MB per photo
+    public const INCIDENT_PHOTO_MAX_BYTES = 10 * 1024 * 1024; // 10MB per photo
 
     /**
      * @return array{session: PatrolSession, started_now: bool}
@@ -508,17 +508,22 @@ class PatrolSessionOperationService
 
     private function validateIncidentPhoto(UploadedFile $file): void
     {
-        $mime = (string) $file->getMimeType();
-        $allowed = ['image/jpeg', 'image/png', 'image/webp'];
-        if (! in_array($mime, $allowed, true)) {
+        $mime = strtolower((string) ($file->getMimeType() ?: ''));
+        $isImage = str_starts_with($mime, 'image/');
+        if (! $isImage) {
+            $extension = strtolower((string) $file->getClientOriginalExtension());
+            $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'heic', 'heif', 'avif', 'tif', 'tiff'], true);
+        }
+
+        if (! $isImage) {
             throw ValidationException::withMessages([
-                'photos' => 'Format foto insiden tidak valid. Gunakan JPG, PNG, atau WebP.',
+                'photos' => 'File foto insiden harus berupa gambar.',
             ]);
         }
 
         if ($file->getSize() === false || $file->getSize() > self::INCIDENT_PHOTO_MAX_BYTES) {
             throw ValidationException::withMessages([
-                'photos' => 'Ukuran foto insiden melebihi batas yang diizinkan.',
+                'photos' => 'Ukuran foto insiden maksimal 10 MB.',
             ]);
         }
     }

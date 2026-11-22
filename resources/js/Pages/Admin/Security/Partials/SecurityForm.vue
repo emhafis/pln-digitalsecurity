@@ -113,7 +113,7 @@ const props = defineProps({
                 v-model="form.photo"
                 accept="image/*"
                 :existing-url="existingPhotoUrl"
-                hint="Gambar saja, maksimal 1 MB."
+                hint="Gambar saja, maksimal 2 MB."
                 />
             <InputError :messages="form.errors?.photo" />
         </div>
@@ -124,7 +124,7 @@ const props = defineProps({
                 v-model="form.kta_file"
                 accept="image/*"
                 :existing-url="existingKtaUrl"
-                hint="Gambar saja, maksimal 1 MB."
+                hint="Gambar saja, maksimal 2 MB."
                 />
             <InputError :messages="form.errors?.kta_file" />
         </div>

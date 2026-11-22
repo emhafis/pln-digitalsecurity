@@ -137,8 +137,8 @@ class SecurityController extends Controller
             'kta_number' => ['nullable', 'string', 'max:255', Rule::unique('securities', 'kta_number')],
             'kta_issued_date' => ['required', 'date'],
             'kta_expired_date' => ['nullable', 'date'],
-            'photo' => ['nullable', 'image', 'max:1024'],
-            'kta_file' => ['nullable', 'image', 'max:1024'],
+            'photo' => ['nullable', 'image', 'max:2048'],
+            'kta_file' => ['nullable', 'image', 'max:2048'],
             'unit_id' => $scope === null
                 ? ['required', 'integer', 'exists:units,id']
                 : ['nullable', 'integer'],
@@ -247,8 +247,8 @@ class SecurityController extends Controller
             ],
             'kta_issued_date' => ['required', 'date'],
             'kta_expired_date' => ['nullable', 'date'],
-            'photo' => ['nullable', 'image', 'max:1024'],
-            'kta_file' => ['nullable', 'image', 'max:1024'],
+            'photo' => ['nullable', 'image', 'max:2048'],
+            'kta_file' => ['nullable', 'image', 'max:2048'],
             'unit_id' => $scope === null
                 ? ['required', 'integer', 'exists:units,id']
                 : ['nullable', 'integer'],
