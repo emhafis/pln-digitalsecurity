@@ -56,7 +56,7 @@ async function onSelfie(e) {
 
     photoProcessing.value = true;
     try {
-        const result = await compressImage(file, { maxWidth: 1280, maxHeight: 1280, quality: 0.72, maxOutputBytes: 1024 * 1024 });
+        const result = await compressImage(file);
         form.selfie = result.file;
     } catch (err) {
         form.selfie = null;
@@ -140,7 +140,7 @@ onMounted(() => {
                     <div>
                         <label class="mb-1 block text-xs text-gray-500">Selfie (opsional)</label>
                         <input type="file" accept="image/*" capture="user" class="block w-full text-sm" @change="onSelfie" />
-                        <p class="mt-1 text-[11px] text-gray-400">Semua format gambar didukung (termasuk HEIC), maks 10 MB. Foto akan dikonversi ke JPG dan dikompresi otomatis sebelum dikirim.</p>
+                        <p class="mt-1 text-[11px] text-gray-400">Semua format gambar didukung (termasuk HEIC), maks 10 MB. Foto akan dikonversi ke JPG dan dikompresi otomatis ke ukuran kecil sebelum dikirim.</p>
                         <p v-if="photoProcessing" class="mt-1 text-[11px] text-[#1D567F]">Memproses foto...</p>
                         <p v-if="photoError" class="mt-1 text-[11px] text-red-600">{{ photoError }}</p>
                     </div>

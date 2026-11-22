@@ -43,7 +43,7 @@ async function onPhotosChange(e) {
         for (const file of files) {
             const validationError = validateImageFile(file, { maxInputBytes: 10 * 1024 * 1024 });
             if (validationError) throw new Error(validationError);
-            const result = await compressImage(file, { maxWidth: 1280, maxHeight: 1280, quality: 0.72, maxOutputBytes: 1024 * 1024 });
+            const result = await compressImage(file);
             compressed.push(result.file);
         }
         form.photos = compressed;
@@ -135,7 +135,7 @@ function submit() {
 
                     <section class="rounded-xl border border-[#E8E8EC] bg-white p-4">
                         <h2 class="mb-1 text-sm font-semibold text-[#263746]">Foto Inspeksi</h2>
-                        <p class="mb-3 text-xs text-[#9299A2]">Opsional, maksimal {{ maxPhotos }} foto. Semua format gambar didukung (termasuk HEIC), maks 10 MB per foto, dan akan dikonversi ke JPG terkompresi sebelum dikirim.</p>
+                        <p class="mb-3 text-xs text-[#9299A2]">Opsional, maksimal {{ maxPhotos }} foto. Semua format gambar didukung (termasuk HEIC), maks 10 MB per foto, dan akan dikonversi ke JPG terkompresi ukuran kecil sebelum dikirim.</p>
                         <input
                             type="file"
                             accept="image/*"

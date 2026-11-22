@@ -3,12 +3,14 @@
  * Converts all supported images (including HEIC/HEIF when possible) to compressed JPEG.
  */
 export const DEFAULT_COMPRESS_OPTIONS = {
-    maxWidth: 1280,
-    maxHeight: 1280,
-    quality: 0.72,
+    maxWidth: 720,
+    maxHeight: 720,
+    quality: 0.7,
     mimeType: 'image/jpeg',
-    maxOutputBytes: 1024 * 1024, // target ~1MB
-    minQuality: 0.45,
+    maxOutputBytes: 350 * 1024, // target small KB
+    minQuality: 0.5,
+    minWidth: 480,
+    minHeight: 480,
 };
 
 const HEIC_TYPES = ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'];
@@ -143,50 +145,59 @@ export async function compressImage(file, options = {}) {
 
     const opts = { ...DEFAULT_COMPRESS_OPTIONS, ...options };
     const maxOutputBytes = Number(opts.maxOutputBytes) > 0 ? Number(opts.maxOutputBytes) : DEFAULT_COMPRESS_OPTIONS.maxOutputBytes;
-    const mimeType = 'image/jpeg';
     const sourceFile = await prepareSourceFile(file);
 
-    let drawn = await drawToCanvas(sourceFile, opts.maxWidth, opts.maxHeight);
-    let quality = opts.quality;
-    let blob = await canvasToBlob(drawn.canvas, mimeType, quality);
+    const src = await decodeToImageSource(sourceFile);
+    const srcWidth = src.width;
+    const srcHeight = src.height;
+    if (typeof src.close === 'function') src.close();
 
-    let attempts = 0;
-    while (blob.size > maxOutputBytes && attempts < 6) {
-        if (quality > opts.minQuality + 0.01) {
-            quality = Math.max(opts.minQuality, quality - 0.1);
-        } else if (drawn.width > 640 || drawn.height > 640) {
-            const nextWidth = Math.max(640, Math.round(drawn.width * 0.85));
-            const nextHeight = Math.max(640, Math.round(drawn.height * 0.85));
-            drawn.canvas.width = 0;
-            drawn.canvas.height = 0;
-            drawn = await drawToCanvas(sourceFile, nextWidth, nextHeight);
-            quality = Math.max(opts.minQuality, quality);
+    const initial = getTargetSize(srcWidth, srcHeight, opts.maxWidth, opts.maxHeight);
+    let width = initial.width;
+    let height = initial.height;
+    let quality = opts.quality;
+    let blob = null;
+    let bestBlob = null;
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+        const drawn = await drawToCanvas(sourceFile, width, height);
+        blob = await canvasToBlob(drawn.canvas, 'image/jpeg', quality);
+        drawn.canvas.width = 0;
+        drawn.canvas.height = 0;
+
+        if (!bestBlob || blob.size < bestBlob.size) {
+            bestBlob = blob;
+        }
+        if (blob.size <= maxOutputBytes) break;
+
+        if (quality > opts.minQuality + 0.05) {
+            quality = Math.max(opts.minQuality, +(quality - 0.1).toFixed(2));
+        } else if (width > opts.minWidth || height > opts.minHeight) {
+            width = Math.max(opts.minWidth, Math.round(width * 0.85));
+            height = Math.max(opts.minHeight, Math.round(height * 0.85));
+            quality = opts.quality;
         } else {
             break;
         }
-        blob = await canvasToBlob(drawn.canvas, mimeType, quality);
-        attempts += 1;
     }
 
-    drawn.canvas.width = 0;
-    drawn.canvas.height = 0;
-
-    if (blob.size > maxOutputBytes) {
-        throw new Error('Ukuran gambar masih terlalu besar setelah dikompresi. Coba ambil foto ulang.');
+    const finalBlob = blob && blob.size <= maxOutputBytes ? blob : (bestBlob || blob);
+    if (!finalBlob) {
+        throw new Error('Gagal memproses gambar.');
     }
 
-    const outFile = new File([blob], replaceExtension(file.name, 'jpg'), {
-        type: mimeType,
+    const outFile = new File([finalBlob], replaceExtension(file.name, 'jpg'), {
+        type: 'image/jpeg',
         lastModified: Date.now(),
     });
 
     return {
         file: outFile,
-        blob,
-        width: drawn.width,
-        height: drawn.height,
+        blob: finalBlob,
+        width,
+        height,
         originalSize: file.size || 0,
-        compressedSize: blob.size,
+        compressedSize: finalBlob.size,
         wasCompressed: true,
     };
 }

@@ -49,7 +49,7 @@ async function onFileChange(event) {
     processing.value = true;
     cameraError.value = '';
     try {
-        const result = await compressImage(file, { maxWidth: 1280, maxHeight: 1280, quality: 0.72, maxOutputBytes: 1024 * 1024 });
+        const result = await compressImage(file);
         const previewUrl = URL.createObjectURL(result.blob);
         const item = { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, file: result.file, previewUrl, size: result.compressedSize };
         setPhotos([...photos.value, item]);
@@ -110,7 +110,7 @@ defineExpose({ stopCamera, startCamera, openCamera, clearAll });
             <CameraIcon class="h-5 w-5" />
             {{ processing ? 'Memproses...' : 'Buka Kamera' }}
         </button>
-        <p class="text-xs text-[#9299A2]">Foto diambil langsung dari kamera HP. Semua format gambar didukung (termasuk HEIC), maksimal 10 MB, dan akan dikonversi ke JPG terkompresi sebelum dikirim. Maksimal {{ maxPhotos }} foto. {{ photos.length }}/{{ maxPhotos }} terpakai.</p>
+        <p class="text-xs text-[#9299A2]">Foto diambil langsung dari kamera HP. Semua format gambar didukung (termasuk HEIC), maksimal 10 MB, dan akan dikonversi ke JPG terkompresi ukuran kecil sebelum dikirim. Maksimal {{ maxPhotos }} foto. {{ photos.length }}/{{ maxPhotos }} terpakai.</p>
 
         <div v-if="photos.length" class="space-y-2">
             <p class="text-xs font-medium text-[#263746]">Foto yang akan dikirim</p>
