@@ -136,6 +136,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/security-team/create', [SecurityTeamController::class, 'create'])->name('security-team.create');
         Route::get('/security-team/{id}/edit', [SecurityTeamController::class, 'edit'])->whereNumber('id')->name('security-team.edit');
         Route::put('/security-team/{id}', [SecurityTeamController::class, 'update'])->whereNumber('id')->name('security-team.update');
+        Route::patch('/security-team/{id}/toggle', [SecurityTeamController::class, 'toggle'])->whereNumber('id')->name('security-team.toggle');
+        Route::post('/security-team/{id}/member', [SecurityTeamController::class, 'storeMember'])->whereNumber('id')->name('security-team.member.store');
+        Route::put('/security-team/{id}/member/{memberId}/end', [SecurityTeamController::class, 'endMember'])->whereNumber('id')->whereNumber('memberId')->name('security-team.member.end');
         Route::delete('/security-team/{id}', [SecurityTeamController::class, 'destroy'])->whereNumber('id')->name('security-team.destroy');
         Route::get('/security-team/{id}', [SecurityTeamController::class, 'show'])->whereNumber('id')->name('security-team.show');
 

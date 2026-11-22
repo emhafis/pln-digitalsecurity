@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { Link, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
@@ -39,8 +39,9 @@ function submit() {
 
             <FlashMessage />
 
-            <Card>
-                <SecurityPostForm :form="form" :units="units" />
+              <Card>
+                <form @submit.prevent="submit">
+<SecurityPostForm :form="form" :units="units" />
 
                 <div class="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
                     <Link
@@ -51,12 +52,14 @@ function submit() {
                     </Link>
                     <Button
                         :disabled="form.processing"
-                        @click="submit"
+                        type="submit"
                     >
                         Simpan Perubahan
                     </Button>
                 </div>
+                </form>
             </Card>
         </div>
     </AdminLayout>
 </template>
+

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, ref } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import { ChevronDownIcon } from '@heroicons/vue/24/outline';
@@ -135,8 +135,9 @@ function statusVariant(status) {
             </div>
 
             
-<Card>
-    <button
+  <Card>
+    <form @submit.prevent="submit">
+<button
         type="button"
         class="flex w-full items-start justify-between gap-4 text-left"
         @click="detailsOpen = !detailsOpen"
@@ -147,10 +148,10 @@ function statusVariant(status) {
                 <Badge :variant="statusVariant(period.status)">{{ period.status_label }}</Badge>
             </div>
             <p class="mt-1 text-xs text-gray-500">
-                {{ period.unit_name }} · {{ period.post_name }} · {{ period.team_name }}
+                {{ period.unit_name }} Â· {{ period.post_name }} Â· {{ period.team_name }}
             </p>
             <p class="mt-1 text-xs text-gray-500">
-                {{ period.start_date_label }} - {{ period.end_date_label }} · {{ period.members.length }} anggota · {{ period.schedules_count }} jadwal
+                {{ period.start_date_label }} - {{ period.end_date_label }} Â· {{ period.members.length }} anggota Â· {{ period.schedules_count }} jadwal
             </p>
         </div>
         <span class="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-600">
@@ -258,11 +259,13 @@ function statusVariant(status) {
             </div>
         </section>
     </div>
+                </form>
 </Card>
 
 
-            <Card>
-                <div class="mb-4 flex items-center justify-between gap-3">
+              <Card>
+                <form @submit.prevent="submit">
+<div class="mb-4 flex items-center justify-between gap-3">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-800">Snapshot Anggota</h3>
                         <p class="mt-0.5 text-xs text-gray-500">
@@ -308,10 +311,12 @@ function statusVariant(status) {
                         </table>
                     </div>
                 </div>
+                </form>
             </Card>
 
-            <Card>
-                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Card>
+                <form @submit.prevent="submit">
+<div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-800">Jadwal Tersimpan</h3>
                         <p class="mt-0.5 text-xs text-gray-500">
@@ -396,6 +401,7 @@ function statusVariant(status) {
                         </table>
                     </div>
                 </div>
+                </form>
             </Card>
         </div>
 
@@ -412,7 +418,7 @@ function statusVariant(status) {
                 class="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl"
             >
                 <h3 id="edit-schedule-title" class="text-sm font-semibold text-gray-800">Edit Jadwal</h3>
-                <p class="mt-1 text-xs text-gray-500">{{ editing.full_name }} — {{ editing.date_label }}</p>
+                <p class="mt-1 text-xs text-gray-500">{{ editing.full_name }} â€” {{ editing.date_label }}</p>
 
                 <dl class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                     <div class="rounded-md border border-gray-200 p-3">
@@ -484,3 +490,4 @@ function statusVariant(status) {
         </div>
     </AdminLayout>
 </template>
+

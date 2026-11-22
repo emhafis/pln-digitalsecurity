@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { Link, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
@@ -46,8 +46,9 @@ function submit() {
 
             <FlashMessage />
 
-            <Card>
-                <SecurityForm
+              <Card>
+                <form @submit.prevent="submit">
+<SecurityForm
                     :form="form"
                     :units="units"
                     :can-choose-unit="canChooseUnit"
@@ -64,12 +65,14 @@ function submit() {
                     </Link>
                     <Button
                         :disabled="form.processing"
-                        @click="submit"
+                        type="submit"
                     >
                         Simpan Perubahan
                     </Button>
                 </div>
+                </form>
             </Card>
         </div>
     </AdminLayout>
 </template>
+
