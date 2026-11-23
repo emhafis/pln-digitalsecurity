@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SecurityPost;
 use App\Models\Unit;
+use App\Services\ActivityLogService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -132,7 +133,16 @@ class SecurityPostController extends Controller
             'unit_id' => array_merge($this->unitIdRules($request), ['required']),
         ]);
 
-        SecurityPost::create($validated);
+        $securityPost = SecurityPost::create($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Pos Jaga',
+            'description' => 'Membuat pos jaga: '.$securityPost->name,
+            'subject' => $securityPost,
+            'unit_id' => $securityPost->unit_id,
+            'new_values' => $securityPost->only(['name', 'address', 'unit_id', 'latitude', 'longitude']),
+        ]);
 
         return redirect()
             ->route('admin.security-post.index')
@@ -182,7 +192,18 @@ class SecurityPostController extends Controller
             'unit_id' => array_merge($this->unitIdRules($request), ['required']),
         ]);
 
+        $old = $securityPost->only(['name', 'address', 'unit_id', 'latitude', 'longitude']);
         $securityPost->update($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Pos Jaga',
+            'description' => 'Mengubah pos jaga: '.$securityPost->name,
+            'subject' => $securityPost,
+            'unit_id' => $securityPost->unit_id,
+            'old_values' => $old,
+            'new_values' => $securityPost->only(['name', 'address', 'unit_id', 'latitude', 'longitude']),
+        ]);
 
         return redirect()
             ->route('admin.security-post.show', $securityPost->id)
@@ -197,11 +218,22 @@ class SecurityPostController extends Controller
         $securityPost = SecurityPost::findOrFail($id);
         $this->authorizeScope($request, $securityPost);
 
+        $old = $securityPost->only(['id', 'name', 'unit_id', 'address']);
         try {
             DB::transaction(fn () => $securityPost->delete());
         } catch (QueryException) {
             return back()->with('error', 'Tidak dapat menghapus post keamanan yang masih digunakan.');
         }
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Pos Jaga',
+            'description' => 'Menghapus pos jaga: '.($old['name'] ?? '-'),
+            'subject_type' => SecurityPost::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $old['unit_id'] ?? null,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.security-post.index')

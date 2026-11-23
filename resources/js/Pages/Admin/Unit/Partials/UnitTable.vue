@@ -7,6 +7,7 @@ import Pagination from '@/Components/Admin/Pagination.vue';
 defineProps({
     rows: { type: Array, default: () => [] },
     meta: { type: Object, default: null },
+    canManage: { type: Boolean, default: false },
 });
 
 defineEmits(['page-change']);
@@ -29,7 +30,7 @@ function goToDetail(row) {
             <th class="px-2 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Nama Unit</th>
             <th class="px-2 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Level</th>
             <th class="px-2 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-            <th class="px-2 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Aksi</th>
+            <th v-if="canManage" class="px-2 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Aksi</th>
         </template>
 
         <tr
@@ -44,7 +45,7 @@ function goToDetail(row) {
             <td class="px-2 py-3.5">
                 <Badge :variant="row.status === 'Aktif' ? 'emerald' : 'gray'">{{ row.status }}</Badge>
             </td>
-            <td class="px-2 py-3.5 text-center">
+            <td v-if="canManage" class="px-2 py-3.5 text-center">
                 <div class="flex items-center justify-center gap-1">
                     <Link
                         :href="`/admin/unit/${row.id}/edit`"

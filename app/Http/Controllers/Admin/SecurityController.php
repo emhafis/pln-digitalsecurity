@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Security;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\ActivityLogService;
 use App\Support\PublicStorageUrl;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -188,6 +189,15 @@ class SecurityController extends Controller
             return $security;
         });
 
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Satpam',
+            'description' => 'Membuat data satpam: '.$security->full_name,
+            'subject' => $security,
+            'unit_id' => $security->user?->unit_id,
+            'new_values' => $security->only(['full_name', 'phone_number', 'kta_number', 'kta_issued_date', 'kta_expired_date']),
+        ]);
+
         return redirect()
             ->route('admin.security.index')
             ->with('success', 'Personel security berhasil ditambahkan. Username: '.$security->user?->username);
@@ -258,6 +268,9 @@ class SecurityController extends Controller
             ? (int) $validated['unit_id']
             : (int) $request->user()->unit_id;
 
+        $old = $security->only(['full_name', 'phone_number', 'address', 'birth_place', 'birth_date', 'kta_number', 'kta_issued_date', 'kta_expired_date']);
+        $old['unit_id'] = $security->user?->unit_id;
+
         DB::transaction(function () use ($request, $validated, $unitId, $security) {
             $security->fill([
                 'full_name' => $validated['full_name'],
@@ -289,6 +302,16 @@ class SecurityController extends Controller
             }
         });
 
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Satpam',
+            'description' => 'Mengubah data satpam: '.$security->full_name,
+            'subject' => $security,
+            'unit_id' => $security->user?->unit_id,
+            'old_values' => $old,
+            'new_values' => array_merge($security->only(['full_name', 'phone_number', 'address', 'birth_place', 'birth_date', 'kta_number', 'kta_issued_date', 'kta_expired_date']), ['unit_id' => $security->user?->unit_id]),
+        ]);
+
         return redirect()
             ->route('admin.security.show', $security->id)
             ->with('success', 'Personel security berhasil diperbarui.');
@@ -302,6 +325,8 @@ class SecurityController extends Controller
         $security = Security::with('user')->findOrFail($id);
         $this->authorizeScope($request, $security);
 
+        $old = $security->only(['id', 'full_name', 'registration_number', 'kta_number']);
+        $old['unit_id'] = $security->user?->unit_id;
         try {
             DB::transaction(function () use ($security) {
                 $this->deleteFile($security->photo);
@@ -315,6 +340,16 @@ class SecurityController extends Controller
         } catch (QueryException) {
             return back()->with('error', 'Tidak dapat menghapus personel security yang masih digunakan.');
         }
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Satpam',
+            'description' => 'Menghapus data satpam: '.($old['full_name'] ?? '-'),
+            'subject_type' => Security::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $old['unit_id'] ?? null,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.security.index')

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Shift;
 use App\Models\Unit;
+use App\Services\ActivityLogService;
 use App\Support\AttendanceClock;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -156,7 +157,16 @@ class ShiftController extends Controller
             $validated['end_day_offset'] = false;
         }
 
-        Shift::create($validated);
+        $shift = Shift::create($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Shift',
+            'description' => 'Membuat shift: '.$shift->name,
+            'subject' => $shift,
+            'unit_id' => $shift->unit_id,
+            'new_values' => ['name' => $shift->name, 'code' => $shift->code, 'type' => $shift->type, 'start_time' => $shift->start_time, 'end_time' => $shift->end_time, 'is_active' => $shift->is_active],
+        ]);
 
         return redirect()
             ->route('admin.shift.index')
@@ -250,7 +260,18 @@ class ShiftController extends Controller
             ]);
         }
 
+        $old = $shift->only(['unit_id', 'name', 'code', 'type', 'start_time', 'end_time', 'end_day_offset', 'is_active']);
         $shift->update($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Shift',
+            'description' => 'Mengubah shift: '.$shift->name,
+            'subject' => $shift,
+            'unit_id' => $shift->unit_id,
+            'old_values' => $old,
+            'new_values' => $shift->only(['unit_id', 'name', 'code', 'type', 'start_time', 'end_time', 'end_day_offset', 'is_active']),
+        ]);
 
         return redirect()
             ->route('admin.shift.show', $shift->id)
@@ -288,11 +309,22 @@ class ShiftController extends Controller
             );
         }
 
+        $old = $shift->only(['id', 'unit_id', 'name', 'code', 'type']);
         try {
             DB::transaction(fn () => $shift->delete());
         } catch (QueryException) {
             return back()->with('error', 'Tidak dapat menghapus shift yang masih digunakan.');
         }
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Shift',
+            'description' => 'Menghapus shift: '.($old['name'] ?? '-'),
+            'subject_type' => Shift::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $old['unit_id'] ?? null,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.shift.index')

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PatrolPoint;
 use App\Models\SecurityPost;
 use App\Models\Unit;
+use App\Services\ActivityLogService;
 use App\Services\PatrolPointQrCodeService;
 use Dompdf\Dompdf;
 use Illuminate\Database\QueryException;
@@ -141,6 +142,15 @@ class PatrolPointController extends Controller
 
         $patrolPoint = PatrolPoint::create($validated);
 
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Titik Patroli',
+            'description' => 'Membuat titik patroli: '.$patrolPoint->name,
+            'subject' => $patrolPoint,
+            'unit_id' => $patrolPoint->securityPost?->unit_id,
+            'new_values' => $patrolPoint->only(['name', 'security_post_id']),
+        ]);
+
         return redirect()
             ->route('admin.patrol-point.post.show', $patrolPoint->security_post_id)
             ->with('success', 'Titik patroli berhasil ditambahkan.');
@@ -264,7 +274,18 @@ class PatrolPointController extends Controller
             'security_post_id' => array_merge($this->securityPostIdRules($request), ['required']),
         ]);
 
+        $old = $patrolPoint->only(['name', 'security_post_id']);
         $patrolPoint->update($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Titik Patroli',
+            'description' => 'Mengubah titik patroli: '.$patrolPoint->name,
+            'subject' => $patrolPoint,
+            'unit_id' => $patrolPoint->securityPost?->unit_id,
+            'old_values' => $old,
+            'new_values' => $patrolPoint->only(['name', 'security_post_id']),
+        ]);
 
         return redirect()
             ->route('admin.patrol-point.post.show', $validated['security_post_id'])
@@ -281,11 +302,23 @@ class PatrolPointController extends Controller
 
         $securityPostId = $patrolPoint->security_post_id;
 
+        $old = $patrolPoint->only(['id', 'name', 'security_post_id']);
+        $unitId = $patrolPoint->securityPost?->unit_id;
         try {
             DB::transaction(fn () => $patrolPoint->delete());
         } catch (QueryException) {
             return back()->with('error', 'Tidak dapat menghapus titik patroli yang masih digunakan.');
         }
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Titik Patroli',
+            'description' => 'Menghapus titik patroli: '.($old['name'] ?? '-'),
+            'subject_type' => PatrolPoint::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $unitId,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.patrol-point.post.show', $securityPostId)

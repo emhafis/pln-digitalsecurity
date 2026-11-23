@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\ResolvesAttendanceScope;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceCorrection;
 use App\Models\AttendanceRecord;
+use App\Services\ActivityLogService;
 use App\Services\AttendanceCorrectionService;
 use App\Support\AttendanceClock;
 use Illuminate\Http\RedirectResponse;
@@ -113,6 +114,15 @@ class AttendanceCorrectionController extends Controller
 
         $service->approve($correction, $request->user(), $validated['review_note'] ?? null);
 
+        app(ActivityLogService::class)->log([
+            'action' => 'approved',
+            'module' => 'Absensi',
+            'description' => 'Menyetujui koreksi absensi #'.$correction->id,
+            'subject' => $correction,
+            'unit_id' => $correction->attendanceRecord?->unit_id,
+            'new_values' => ['status' => AttendanceCorrection::STATUS_APPROVED, 'review_note' => $validated['review_note'] ?? null],
+        ]);
+
         return back()->with('success', 'Pengajuan koreksi disetujui.');
     }
 
@@ -128,6 +138,15 @@ class AttendanceCorrectionController extends Controller
         ]);
 
         $service->reject($correction, $request->user(), $validated['review_note'] ?? null);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'rejected',
+            'module' => 'Absensi',
+            'description' => 'Menolak koreksi absensi #'.$correction->id,
+            'subject' => $correction,
+            'unit_id' => $correction->attendanceRecord?->unit_id,
+            'new_values' => ['status' => AttendanceCorrection::STATUS_REJECTED, 'review_note' => $validated['review_note'] ?? null],
+        ]);
 
         return back()->with('success', 'Pengajuan koreksi ditolak.');
     }

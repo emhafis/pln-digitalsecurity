@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SchedulePattern;
 use App\Models\Shift;
 use App\Models\Unit;
+use App\Services\ActivityLogService;
 use App\Support\AttendanceClock;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -154,6 +155,15 @@ class SchedulePatternController extends Controller
             return $pattern;
         });
 
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Pola Rotasi',
+            'description' => 'Membuat pola rotasi: '.$pattern->name,
+            'subject' => $pattern,
+            'unit_id' => $pattern->unit_id,
+            'new_values' => ['name' => $pattern->name, 'cycle_length' => $pattern->cycle_length, 'is_active' => $pattern->is_active, 'details_count' => count($details)],
+        ]);
+
         return redirect()
             ->route('admin.schedule-pattern.show', $pattern->id)
             ->with('success', 'Pola rotasi berhasil ditambahkan.');
@@ -244,6 +254,7 @@ class SchedulePatternController extends Controller
         $cycleLength = (int) $validated['cycle_length'];
         $details = $this->validateDetails($request, $unitId, $cycleLength);
 
+        $old = $pattern->only(['unit_id', 'name', 'description', 'cycle_length', 'is_active']);
         DB::transaction(function () use ($pattern, $validated, $details) {
             $pattern->update($validated);
             $pattern->details()->delete();
@@ -252,6 +263,16 @@ class SchedulePatternController extends Controller
                 $pattern->details()->create($detail);
             }
         });
+
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Pola Rotasi',
+            'description' => 'Mengubah pola rotasi: '.$pattern->name,
+            'subject' => $pattern,
+            'unit_id' => $pattern->unit_id,
+            'old_values' => $old,
+            'new_values' => array_merge($pattern->only(['unit_id', 'name', 'description', 'cycle_length', 'is_active']), ['details_count' => count($details)]),
+        ]);
 
         return redirect()
             ->route('admin.schedule-pattern.show', $pattern->id)
@@ -289,11 +310,22 @@ class SchedulePatternController extends Controller
             );
         }
 
+        $old = $pattern->only(['id', 'unit_id', 'name', 'cycle_length', 'is_active']);
         try {
             DB::transaction(fn () => $pattern->delete());
         } catch (QueryException) {
             return back()->with('error', 'Tidak dapat menghapus pola rotasi yang masih digunakan.');
         }
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Pola Rotasi',
+            'description' => 'Menghapus pola rotasi: '.($old['name'] ?? '-'),
+            'subject_type' => SchedulePattern::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $old['unit_id'] ?? null,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.schedule-pattern.index')

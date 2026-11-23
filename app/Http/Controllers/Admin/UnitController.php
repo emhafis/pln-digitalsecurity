@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Unit;
+use App\Services\ActivityLogService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -67,6 +68,7 @@ class UnitController extends Controller
             'search' => $search,
             'sort' => $sort,
             'dir' => $dir,
+            'can_manage' => $this->isSuperadmin($request),
         ]);
     }
 
@@ -94,7 +96,16 @@ class UnitController extends Controller
             'unit_level' => ['required', 'string', 'in:uid,up,ulp'],
         ]);
 
-        Unit::create($validated);
+        $unit = Unit::create($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Unit',
+            'description' => 'Membuat unit: '.$unit->unit_name,
+            'subject' => $unit,
+            'unit_id' => $unit->id,
+            'new_values' => $unit->only(['unit_name', 'unit_level', 'unit_code']),
+        ]);
 
         return redirect()
             ->route('admin.unit.index')
@@ -106,6 +117,7 @@ class UnitController extends Controller
      */
     public function edit(Request $request, int $id): Response
     {
+        abort_unless($this->isSuperadmin($request), 403);
         $unit = $this->scopedUnit($request, $id);
 
         return Inertia::render('Admin/Unit/Edit', [
@@ -131,6 +143,7 @@ class UnitController extends Controller
                 'created_at' => $unit->created_at?->format('d M Y, H:i'),
                 'updated_at' => $unit->updated_at?->format('d M Y, H:i'),
             ],
+            'can_manage' => $this->isSuperadmin($request),
         ]);
     }
 
@@ -139,6 +152,7 @@ class UnitController extends Controller
      */
     public function update(Request $request, int $id): RedirectResponse
     {
+        abort_unless($this->isSuperadmin($request), 403);
         $unit = $this->scopedUnit($request, $id);
 
         $request->merge(['unit_name' => Str::upper((string) $request->input('unit_name'))]);
@@ -149,7 +163,18 @@ class UnitController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ]);
 
+        $old = $unit->only(['unit_name', 'unit_level', 'is_active']);
         $unit->update($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Unit',
+            'description' => 'Mengubah unit: '.$unit->unit_name,
+            'subject' => $unit,
+            'unit_id' => $unit->id,
+            'old_values' => $old,
+            'new_values' => $unit->only(['unit_name', 'unit_level', 'is_active']),
+        ]);
 
         return redirect()
             ->route('admin.unit.show', $unit->id)
@@ -161,13 +186,25 @@ class UnitController extends Controller
      */
     public function destroy(Request $request, int $id): RedirectResponse
     {
+        abort_unless($this->isSuperadmin($request), 403);
         $unit = $this->scopedUnit($request, $id);
 
+        $old = $unit->only(['id', 'unit_name', 'unit_level', 'unit_code']);
         try {
             DB::transaction(fn () => $unit->delete());
         } catch (QueryException) {
             return back()->with('error', 'Tidak dapat menghapus unit yang memiliki sub-unit.');
         }
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Unit',
+            'description' => 'Menghapus unit: '.($old['unit_name'] ?? '-'),
+            'subject_type' => Unit::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $old['id'] ?? $id,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.unit.index')

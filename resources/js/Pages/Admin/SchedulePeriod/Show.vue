@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { computed, ref } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
+import axios from 'axios';
 import { ChevronDownIcon } from '@heroicons/vue/24/outline';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
@@ -10,6 +11,7 @@ import Button from '@/Components/Admin/Button.vue';
 import FlashMessage from '@/Components/Admin/FlashMessage.vue';
 import InputLabel from '@/Components/Admin/InputLabel.vue';
 import InputError from '@/Components/Admin/InputError.vue';
+import DeleteSchedulePeriodModal from './Partials/DeleteSchedulePeriodModal.vue';
 
 const props = defineProps({
     period: { type: Object, required: true },
@@ -24,6 +26,12 @@ const confirming = ref(false);
 const detailsOpen = ref(false);
 
 const form = useForm({ shift_id: '', notes: '' });
+
+const deleteModalOpen = ref(false);
+const deleteLoading = ref(false);
+const deleteSummary = ref(null);
+const deleteError = ref('');
+const deleteForm = useForm({ password: '' });
 
 const securityOptions = computed(() => [
     { value: '', label: 'Semua satpam' },
@@ -90,6 +98,48 @@ function statusVariant(status) {
 
     return 'gray';
 }
+
+async function openDeleteModal() {
+    deleteModalOpen.value = true;
+    deleteLoading.value = true;
+    deleteSummary.value = null;
+    deleteError.value = '';
+    deleteForm.reset();
+    deleteForm.clearErrors();
+
+    try {
+        const response = await axios.get(`/admin/schedule-period/${props.period.id}/delete-summary`);
+        deleteSummary.value = response.data;
+        if (response.data?.is_locked) {
+            deleteError.value = response.data.locked_reason || 'Periode tidak dapat dihapus karena sudah selesai atau dikunci.';
+        }
+    } catch (error) {
+        deleteError.value = error?.response?.data?.message || 'Gagal memuat rincian data yang akan dihapus.';
+    } finally {
+        deleteLoading.value = false;
+    }
+}
+
+function closeDeleteModal() {
+    if (deleteForm.processing) return;
+    deleteModalOpen.value = false;
+    deleteSummary.value = null;
+    deleteError.value = '';
+    deleteForm.reset();
+    deleteForm.clearErrors();
+}
+
+function submitDelete() {
+    if (deleteForm.processing) return;
+    deleteError.value = '';
+    deleteForm.clearErrors();
+    deleteForm.delete(`/admin/schedule-period/${props.period.id}`, {
+        preserveScroll: true,
+        onError: (errors) => {
+            if (errors?.period) deleteError.value = errors.period;
+        },
+    });
+}
 </script>
 
 <template>
@@ -115,6 +165,14 @@ function statusVariant(status) {
                     >
                         Edit
                     </Link>
+                    <Button v-if="!isLocked" variant="danger" @click="openDeleteModal">Hapus</Button>
+                    <span
+                        v-else
+                        class="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500"
+                        title="Periode selesai/dikunci tidak dapat dihapus"
+                    >
+                        Terkunci
+                    </span>
                     <Link
                         href="/admin/schedule-period"
                         class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-xs text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
@@ -404,6 +462,20 @@ function statusVariant(status) {
                 </form>
             </Card>
         </div>
+
+        <DeleteSchedulePeriodModal
+            :open="deleteModalOpen"
+            :loading="deleteLoading"
+            :processing="deleteForm.processing"
+            :summary="deleteSummary"
+            :password="deleteForm.password"
+            :error="deleteError"
+            :password-error="deleteForm.errors?.password"
+            :period-error="deleteForm.errors?.period"
+            @update:password="deleteForm.password = $event"
+            @close="closeDeleteModal"
+            @confirm="submitDelete"
+        />
 
         <div
             v-if="editing"

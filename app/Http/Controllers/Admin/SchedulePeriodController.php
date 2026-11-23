@@ -3,6 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AttendanceCorrection;
+use App\Models\AttendanceGenerationAnomaly;
+use App\Models\AttendanceRecord;
+use App\Models\PatrolScan;
+use App\Models\PatrolScanPhoto;
+use App\Models\PatrolSession;
+use App\Models\PatrolSessionMember;
+use App\Models\PatrolSessionPoint;
 use App\Models\Schedule;
 use App\Models\SchedulePattern;
 use App\Models\SchedulePeriod;
@@ -14,11 +22,15 @@ use App\Models\Shift;
 use App\Models\Unit;
 use App\Services\ScheduleGenerationService;
 use App\Support\AttendanceClock;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -194,6 +206,23 @@ class SchedulePeriodController extends Controller
 
             return $period;
         });
+
+        app(\App\Services\ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Periode Jadwal',
+            'description' => 'Membuat periode jadwal: '.$period->name,
+            'subject' => $period,
+            'unit_id' => $period->unit_id,
+            'new_values' => [
+                'name' => $period->name,
+                'start_date' => $period->start_date?->toDateString(),
+                'end_date' => $period->end_date?->toDateString(),
+                'status' => $period->status,
+                'security_post_id' => $period->security_post_id,
+                'security_team_id' => $period->security_team_id,
+                'members_count' => count($members),
+            ],
+        ]);
 
         return redirect()
             ->route('admin.schedule-period.show', $period->id)
@@ -538,7 +567,8 @@ class SchedulePeriodController extends Controller
             'notes.required' => 'Alasan perubahan wajib diisi.',
         ]);
 
-        DB::transaction(function () use ($request, $period, $scheduleId, $validated) {
+        $logPayload = null;
+        DB::transaction(function () use ($request, $period, $scheduleId, $validated, &$logPayload) {
             // Keep the lock order consistent with the generator: period row
             // first, then the schedule row.
             $lockedPeriod = SchedulePeriod::query()
@@ -553,6 +583,7 @@ class SchedulePeriodController extends Controller
             }
 
             $schedule = Schedule::query()
+                ->with(['security:id,full_name', 'shift:id,name'])
                 ->where('schedule_period_id', $lockedPeriod->id)
                 ->lockForUpdate()
                 ->findOrFail($scheduleId);
@@ -575,6 +606,9 @@ class SchedulePeriodController extends Controller
                 ]);
             }
 
+            $oldShiftId = $schedule->shift_id;
+            $oldShiftName = $schedule->shift?->name;
+
             // ponytail: only shift/source/notes/updated_by change; date and security stay fixed, so the
             // (security_id, date) unique index cannot be violated here.
             $schedule->update([
@@ -583,7 +617,31 @@ class SchedulePeriodController extends Controller
                 'notes' => trim($validated['notes']),
                 'updated_by' => $request->user()->id,
             ]);
+
+            $logPayload = [
+                'schedule_id' => $schedule->id,
+                'date' => $schedule->date?->toDateString(),
+                'security_name' => $schedule->security?->full_name,
+                'old_shift_id' => $oldShiftId,
+                'old_shift_name' => $oldShiftName,
+                'new_shift_id' => (int) $validated['shift_id'],
+                'notes' => trim($validated['notes']),
+            ];
         });
+
+        if ($logPayload !== null) {
+            $newShiftName = Shift::query()->whereKey($logPayload['new_shift_id'])->value('name');
+            app(\App\Services\ActivityLogService::class)->log([
+                'action' => 'updated',
+                'module' => 'Periode Jadwal',
+                'description' => 'Penyesuaian jadwal manual: '.($logPayload['security_name'] ?? 'Satpam').' '.$logPayload['date'],
+                'subject_type' => Schedule::class,
+                'subject_id' => $logPayload['schedule_id'],
+                'unit_id' => $period->unit_id,
+                'old_values' => ['shift_id' => $logPayload['old_shift_id'], 'shift_name' => $logPayload['old_shift_name']],
+                'new_values' => ['shift_id' => $logPayload['new_shift_id'], 'shift_name' => $newShiftName, 'notes' => $logPayload['notes'], 'source' => Schedule::SOURCE_ADJUSTMENT],
+            ]);
+        }
 
         return redirect()
             ->route('admin.schedule-period.show', $period->id)
@@ -670,6 +728,22 @@ class SchedulePeriodController extends Controller
                 $result['skipped'],
                 $result['manual_preserved']
             );
+
+        app(\App\Services\ActivityLogService::class)->log([
+            'action' => 'generated',
+            'module' => 'Periode Jadwal',
+            'description' => 'Generate jadwal periode: '.$period->name.' (mode: '.$validated['mode'].')',
+            'subject' => $period,
+            'unit_id' => $period->unit_id,
+            'new_values' => [
+                'mode' => $validated['mode'],
+                'created' => $result['created'] ?? 0,
+                'updated' => $result['updated'] ?? 0,
+                'deleted' => $result['deleted'] ?? 0,
+                'skipped' => $result['skipped'] ?? 0,
+                'manual_preserved' => $result['manual_preserved'] ?? 0,
+            ],
+        ]);
 
         return redirect()
             ->route('admin.schedule-period.generate.preview', [
@@ -818,6 +892,386 @@ class SchedulePeriodController extends Controller
         return redirect()
             ->route('admin.schedule-period.show', $period->id)
             ->with('success', 'Periode jadwal berhasil diperbarui.');
+    }
+
+    /**
+     * Summary of data that will be deleted with the period.
+     */
+    public function deleteSummary(Request $request, int $id): JsonResponse
+    {
+        $period = SchedulePeriod::query()
+            ->with(['unit:id,unit_name', 'securityPost:id,name', 'securityTeam:id,name'])
+            ->findOrFail($id);
+        $this->authorizeScope($request, $period);
+
+        $summary = $this->buildDeleteSummary($period);
+
+        return response()->json($summary);
+    }
+
+    /**
+     * Delete a schedule period and all period-scoped related data.
+     */
+    public function destroy(Request $request, int $id): RedirectResponse
+    {
+        $request->validate([
+            'password' => ['required', 'string'],
+        ], [
+            'password.required' => 'Password akun wajib diisi untuk konfirmasi penghapusan.',
+        ]);
+
+        $user = $request->user();
+        if ($user === null || ! Hash::check((string) $request->input('password'), (string) $user->password)) {
+            throw ValidationException::withMessages([
+                'password' => 'Password yang Anda masukkan tidak sesuai.',
+            ]);
+        }
+
+        $period = SchedulePeriod::query()->with(['unit:id,unit_name', 'securityPost:id,name', 'securityTeam:id,name'])->findOrFail($id);
+        $this->authorizeScope($request, $period);
+        $this->assertPeriodDeletable($period);
+        $summary = $this->buildDeleteSummary($period);
+
+        $photoPaths = [];
+
+        DB::transaction(function () use ($request, $id, &$photoPaths) {
+            $period = SchedulePeriod::query()
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->authorizeScope($request, $period);
+            $this->assertPeriodDeletable($period);
+
+            $photoPaths = $this->collectPeriodPhotoPaths((int) $period->id);
+            $this->deletePeriodData((int) $period->id);
+            $period->delete();
+        });
+
+        app(\App\Services\ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Periode Jadwal',
+            'description' => 'Menghapus periode jadwal: '.$summary['period']['name'],
+            'subject_type' => SchedulePeriod::class,
+            'subject_id' => $id,
+            'unit_id' => $period->unit_id,
+            'old_values' => [
+                'name' => $summary['period']['name'],
+                'start_date' => $summary['period']['start_date'],
+                'end_date' => $summary['period']['end_date'],
+                'unit_name' => $summary['period']['unit_name'],
+                'post_name' => $summary['period']['post_name'],
+                'team_name' => $summary['period']['team_name'],
+                'counts' => collect($summary['counts'])->mapWithKeys(fn ($c) => [$c['key'] => $c['count']])->all(),
+            ],
+        ]);
+
+        $failedFiles = $this->cleanupPhotoPaths($photoPaths, $id, $request->user()?->id);
+
+        $message = 'Periode jadwal berhasil dihapus beserta data terkait.';
+        $redirect = redirect()->route('admin.schedule-period.index')->with('success', $message);
+
+        if ($failedFiles > 0) {
+            $redirect->with('error', 'Data periode berhasil dihapus, tetapi '.$failedFiles.' file dokumentasi gagal dibersihkan. Silakan periksa log aplikasi.');
+        }
+
+        return $redirect;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildDeleteSummary(SchedulePeriod $period): array
+    {
+        $periodId = (int) $period->id;
+        $isLocked = $period->status === SchedulePeriod::STATUS_COMPLETED;
+
+        $scheduleIds = Schedule::query()
+            ->where('schedule_period_id', $periodId)
+            ->pluck('id');
+
+        $rotationCount = Schedule::query()
+            ->where('schedule_period_id', $periodId)
+            ->where('source', Schedule::SOURCE_SYSTEM_GENERATED)
+            ->count();
+        $manualCount = Schedule::query()
+            ->where('schedule_period_id', $periodId)
+            ->where('source', Schedule::SOURCE_ADJUSTMENT)
+            ->count();
+
+        $memberCount = SchedulePeriodMember::query()
+            ->where('schedule_period_id', $periodId)
+            ->count();
+
+        $attendanceRecordCount = AttendanceRecord::query()
+            ->where('schedule_period_id', $periodId)
+            ->count();
+        $attendanceCorrectionCount = AttendanceCorrection::query()
+            ->whereIn('attendance_record_id', function ($query) use ($periodId) {
+                $query->select('id')
+                    ->from('attendance_records')
+                    ->where('schedule_period_id', $periodId);
+            })
+            ->count();
+        $attendanceAnomalyCount = AttendanceGenerationAnomaly::query()
+            ->where('schedule_period_id', $periodId)
+            ->count();
+
+        $sessionIds = PatrolSession::query()
+            ->where('schedule_period_id', $periodId)
+            ->pluck('id');
+        $patrolSessionCount = $sessionIds->count();
+        $patrolMemberCount = PatrolSessionMember::query()
+            ->whereIn('patrol_session_id', $sessionIds)
+            ->count();
+        $patrolPointCount = PatrolSessionPoint::query()
+            ->whereIn('patrol_session_id', $sessionIds)
+            ->count();
+        $patrolScanCount = PatrolScan::query()
+            ->whereIn('patrol_session_id', $sessionIds)
+            ->count();
+        $patrolIncidentCount = PatrolScan::query()
+            ->whereIn('patrol_session_id', $sessionIds)
+            ->where('has_incident', true)
+            ->count();
+        $patrolPhotoCount = $this->countPeriodPhotoFiles($sessionIds);
+
+        return [
+            'period' => [
+                'id' => $period->id,
+                'name' => $period->name,
+                'start_date' => $period->start_date?->format('Y-m-d'),
+                'end_date' => $period->end_date?->format('Y-m-d'),
+                'start_date_label' => $period->start_date?->format('d M Y'),
+                'end_date_label' => $period->end_date?->format('d M Y'),
+                'status' => $period->status,
+                'status_label' => $this->statusLabel($period->status),
+                'unit_name' => $period->unit?->unit_name ?? '-',
+                'post_name' => $period->securityPost?->name ?? '-',
+                'team_name' => $period->securityTeam?->name ?? '-',
+            ],
+            'is_locked' => $isLocked,
+            'can_delete' => ! $isLocked,
+            'locked_reason' => $isLocked
+                ? 'Periode tidak dapat dihapus karena sudah selesai atau dikunci.'
+                : null,
+            'counts' => [
+                ['key' => 'period', 'label' => 'Periode jadwal', 'count' => 1],
+                ['key' => 'schedules_rotation', 'label' => 'Jadwal rotation', 'count' => $rotationCount],
+                ['key' => 'schedules_manual', 'label' => 'Jadwal manual', 'count' => $manualCount],
+                ['key' => 'members', 'label' => 'Snapshot anggota regu', 'count' => $memberCount],
+                ['key' => 'attendance_records', 'label' => 'Absensi', 'count' => $attendanceRecordCount],
+                ['key' => 'attendance_corrections', 'label' => 'Koreksi absensi', 'count' => $attendanceCorrectionCount],
+                ['key' => 'attendance_anomalies', 'label' => 'Anomali generate absensi', 'count' => $attendanceAnomalyCount],
+                ['key' => 'patrol_sessions', 'label' => 'Sesi patroli', 'count' => $patrolSessionCount],
+                ['key' => 'patrol_members', 'label' => 'Anggota sesi patroli', 'count' => $patrolMemberCount],
+                ['key' => 'patrol_points', 'label' => 'Titik sesi patroli', 'count' => $patrolPointCount],
+                ['key' => 'patrol_scans', 'label' => 'Scan patroli', 'count' => $patrolScanCount],
+                ['key' => 'patrol_incidents', 'label' => 'Insiden patroli', 'count' => $patrolIncidentCount],
+                ['key' => 'patrol_photos', 'label' => 'Dokumentasi foto patroli', 'count' => $patrolPhotoCount],
+            ],
+            'total_schedules' => $scheduleIds->count(),
+            'has_activity' => $attendanceRecordCount > 0 || $patrolSessionCount > 0,
+        ];
+    }
+
+    private function assertPeriodDeletable(SchedulePeriod $period): void
+    {
+        if ($period->status === SchedulePeriod::STATUS_COMPLETED) {
+            throw ValidationException::withMessages([
+                'period' => 'Periode tidak dapat dihapus karena sudah selesai atau dikunci.',
+            ]);
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, int>  $sessionIds
+     */
+    private function countPeriodPhotoFiles($sessionIds): int
+    {
+        if ($sessionIds->isEmpty()) {
+            return 0;
+        }
+
+        $paths = [];
+
+        PatrolScanPhoto::query()
+            ->whereIn('patrol_scan_id', function ($query) use ($sessionIds) {
+                $query->select('id')
+                    ->from('patrol_scans')
+                    ->whereIn('patrol_session_id', $sessionIds);
+            })
+            ->pluck('photo_path')
+            ->each(function ($path) use (&$paths) {
+                $normalized = $this->normalizePhotoPath($path);
+                if ($normalized !== null) {
+                    $paths[$normalized] = true;
+                }
+            });
+
+        PatrolScan::query()
+            ->whereIn('patrol_session_id', $sessionIds)
+            ->whereNotNull('incident_photo_path')
+            ->pluck('incident_photo_path')
+            ->each(function ($path) use (&$paths) {
+                $normalized = $this->normalizePhotoPath($path);
+                if ($normalized !== null) {
+                    $paths[$normalized] = true;
+                }
+            });
+
+        return count($paths);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function collectPeriodPhotoPaths(int $periodId): array
+    {
+        $sessionIds = PatrolSession::query()
+            ->where('schedule_period_id', $periodId)
+            ->pluck('id');
+
+        if ($sessionIds->isEmpty()) {
+            return [];
+        }
+
+        $paths = [];
+
+        PatrolScanPhoto::query()
+            ->whereIn('patrol_scan_id', function ($query) use ($sessionIds) {
+                $query->select('id')
+                    ->from('patrol_scans')
+                    ->whereIn('patrol_session_id', $sessionIds);
+            })
+            ->pluck('photo_path')
+            ->each(function ($path) use (&$paths) {
+                $normalized = $this->normalizePhotoPath($path);
+                if ($normalized !== null) {
+                    $paths[$normalized] = $normalized;
+                }
+            });
+
+        PatrolScan::query()
+            ->whereIn('patrol_session_id', $sessionIds)
+            ->whereNotNull('incident_photo_path')
+            ->pluck('incident_photo_path')
+            ->each(function ($path) use (&$paths) {
+                $normalized = $this->normalizePhotoPath($path);
+                if ($normalized !== null) {
+                    $paths[$normalized] = $normalized;
+                }
+            });
+
+        return array_values($paths);
+    }
+
+    private function normalizePhotoPath(mixed $path): ?string
+    {
+        if (! is_string($path)) {
+            return null;
+        }
+
+        $trimmed = trim($path);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $trimmed = str_replace('\\', '/', $trimmed);
+        $trimmed = ltrim($trimmed, '/');
+
+        if (str_starts_with($trimmed, 'storage/')) {
+            $trimmed = substr($trimmed, strlen('storage/'));
+        }
+
+        if ($trimmed === '' || str_contains($trimmed, '..')) {
+            return null;
+        }
+
+        return $trimmed;
+    }
+
+    private function deletePeriodData(int $periodId): void
+    {
+        AttendanceCorrection::query()
+            ->whereIn('attendance_record_id', function ($query) use ($periodId) {
+                $query->select('id')
+                    ->from('attendance_records')
+                    ->where('schedule_period_id', $periodId);
+            })
+            ->delete();
+
+        AttendanceRecord::query()
+            ->where('schedule_period_id', $periodId)
+            ->delete();
+
+        AttendanceGenerationAnomaly::query()
+            ->where('schedule_period_id', $periodId)
+            ->delete();
+
+        $sessionIds = PatrolSession::query()
+            ->where('schedule_period_id', $periodId)
+            ->pluck('id');
+
+        if ($sessionIds->isNotEmpty()) {
+            PatrolScanPhoto::query()
+                ->whereIn('patrol_scan_id', function ($query) use ($sessionIds) {
+                    $query->select('id')
+                        ->from('patrol_scans')
+                        ->whereIn('patrol_session_id', $sessionIds);
+                })
+                ->delete();
+
+            PatrolScan::query()
+                ->whereIn('patrol_session_id', $sessionIds)
+                ->delete();
+
+            PatrolSessionPoint::query()
+                ->whereIn('patrol_session_id', $sessionIds)
+                ->delete();
+
+            PatrolSessionMember::query()
+                ->whereIn('patrol_session_id', $sessionIds)
+                ->delete();
+
+            PatrolSession::query()
+                ->whereIn('id', $sessionIds)
+                ->delete();
+        }
+
+        Schedule::query()
+            ->where('schedule_period_id', $periodId)
+            ->delete();
+
+        SchedulePeriodMember::query()
+            ->where('schedule_period_id', $periodId)
+            ->delete();
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    private function cleanupPhotoPaths(array $paths, int $periodId, ?int $userId): int
+    {
+        $failed = 0;
+
+        foreach ($paths as $path) {
+            try {
+                if (Storage::disk('public')->exists($path)) {
+                    Storage::disk('public')->delete($path);
+                }
+            } catch (\Throwable $exception) {
+                $failed++;
+                Log::warning('Failed to cleanup schedule period photo file.', [
+                    'schedule_period_id' => $periodId,
+                    'user_id' => $userId,
+                    'path' => $path,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        return $failed;
     }
 
     /**
