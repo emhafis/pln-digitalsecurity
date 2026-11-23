@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -51,6 +52,15 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        app(ActivityLogService::class)->log([
+            'action' => 'login',
+            'module' => 'Auth',
+            'description' => 'User berhasil login: '.($user->name ?? $user->username),
+            'subject' => $user,
+            'unit_id' => $user->unit_id,
+            'new_values' => ['role' => $user->role, 'username' => $user->username],
+        ]);
+
         return redirect()->intended(
             in_array($user->role, ['superadmin', 'admin'], true)
                 ? route('admin.dashboard')
@@ -63,6 +73,18 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        $user = $request->user();
+        if ($user) {
+            app(ActivityLogService::class)->log([
+                'action' => 'logout',
+                'module' => 'Auth',
+                'description' => 'User logout: '.($user->name ?? $user->username),
+                'subject' => $user,
+                'unit_id' => $user->unit_id,
+                'old_values' => ['role' => $user->role, 'username' => $user->username],
+            ]);
+        }
+
         Auth::logout();
 
         $request->session()->invalidate();

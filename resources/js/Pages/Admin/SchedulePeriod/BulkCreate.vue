@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, ref, watch } from 'vue';
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
@@ -337,11 +337,11 @@ watch(selectedTeams, (teams) => {
                     >
                         <div class="text-xs text-gray-700">
                             <span class="font-semibold">{{ period.team_name }}</span>
-                            <span class="mx-1">·</span>
+                            <span class="mx-1">Â·</span>
                             <span>{{ period.name }}</span>
-                            <span class="mx-1">·</span>
+                            <span class="mx-1">Â·</span>
                             <span>{{ period.start_date }} s/d {{ period.end_date }}</span>
-                            <span class="mx-1">·</span>
+                            <span class="mx-1">Â·</span>
                             <span>{{ period.status_label }}</span>
                         </div>
                         <Link
@@ -354,8 +354,9 @@ watch(selectedTeams, (teams) => {
                 </ul>
             </div>
 
-            <Card>
-                <div v-if="props.units.length > 0 && !form.unit_id" class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <Card>
+                <form @submit.prevent="submit">
+<div v-if="props.units.length > 0 && !form.unit_id" class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     Pilih unit terlebih dahulu untuk memuat pos jaga, regu, dan pola rotasi.
                 </div>
 
@@ -529,12 +530,14 @@ watch(selectedTeams, (teams) => {
                         >
                             Batal
                         </Link>
-                        <Button :disabled="form.processing || selectedTeams.length === 0" @click="submit">
+                        <Button :disabled="form.processing || selectedTeams.length === 0" type="submit">
                             {{ form.processing ? 'Menyimpan...' : 'Simpan' }}
                         </Button>
                     </div>
                 </div>
+                </form>
             </Card>
         </div>
     </AdminLayout>
 </template>
+

@@ -1,6 +1,7 @@
-<script setup>
+﻿<script setup>
 import { computed, ref } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
+import axios from 'axios';
 import { ChevronDownIcon } from '@heroicons/vue/24/outline';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
@@ -10,6 +11,7 @@ import Button from '@/Components/Admin/Button.vue';
 import FlashMessage from '@/Components/Admin/FlashMessage.vue';
 import InputLabel from '@/Components/Admin/InputLabel.vue';
 import InputError from '@/Components/Admin/InputError.vue';
+import DeleteSchedulePeriodModal from './Partials/DeleteSchedulePeriodModal.vue';
 
 const props = defineProps({
     period: { type: Object, required: true },
@@ -24,6 +26,12 @@ const confirming = ref(false);
 const detailsOpen = ref(false);
 
 const form = useForm({ shift_id: '', notes: '' });
+
+const deleteModalOpen = ref(false);
+const deleteLoading = ref(false);
+const deleteSummary = ref(null);
+const deleteError = ref('');
+const deleteForm = useForm({ password: '' });
 
 const securityOptions = computed(() => [
     { value: '', label: 'Semua satpam' },
@@ -90,6 +98,48 @@ function statusVariant(status) {
 
     return 'gray';
 }
+
+async function openDeleteModal() {
+    deleteModalOpen.value = true;
+    deleteLoading.value = true;
+    deleteSummary.value = null;
+    deleteError.value = '';
+    deleteForm.reset();
+    deleteForm.clearErrors();
+
+    try {
+        const response = await axios.get(`/admin/schedule-period/${props.period.id}/delete-summary`);
+        deleteSummary.value = response.data;
+        if (response.data?.is_locked) {
+            deleteError.value = response.data.locked_reason || 'Periode tidak dapat dihapus karena sudah selesai atau dikunci.';
+        }
+    } catch (error) {
+        deleteError.value = error?.response?.data?.message || 'Gagal memuat rincian data yang akan dihapus.';
+    } finally {
+        deleteLoading.value = false;
+    }
+}
+
+function closeDeleteModal() {
+    if (deleteForm.processing) return;
+    deleteModalOpen.value = false;
+    deleteSummary.value = null;
+    deleteError.value = '';
+    deleteForm.reset();
+    deleteForm.clearErrors();
+}
+
+function submitDelete() {
+    if (deleteForm.processing) return;
+    deleteError.value = '';
+    deleteForm.clearErrors();
+    deleteForm.delete(`/admin/schedule-period/${props.period.id}`, {
+        preserveScroll: true,
+        onError: (errors) => {
+            if (errors?.period) deleteError.value = errors.period;
+        },
+    });
+}
 </script>
 
 <template>
@@ -115,6 +165,14 @@ function statusVariant(status) {
                     >
                         Edit
                     </Link>
+                    <Button v-if="!isLocked" variant="danger" @click="openDeleteModal">Hapus</Button>
+                    <span
+                        v-else
+                        class="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500"
+                        title="Periode selesai/dikunci tidak dapat dihapus"
+                    >
+                        Terkunci
+                    </span>
                     <Link
                         href="/admin/schedule-period"
                         class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-xs text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
@@ -135,8 +193,9 @@ function statusVariant(status) {
             </div>
 
             
-<Card>
-    <button
+  <Card>
+    <form @submit.prevent="submit">
+<button
         type="button"
         class="flex w-full items-start justify-between gap-4 text-left"
         @click="detailsOpen = !detailsOpen"
@@ -147,10 +206,10 @@ function statusVariant(status) {
                 <Badge :variant="statusVariant(period.status)">{{ period.status_label }}</Badge>
             </div>
             <p class="mt-1 text-xs text-gray-500">
-                {{ period.unit_name }} · {{ period.post_name }} · {{ period.team_name }}
+                {{ period.unit_name }} Â· {{ period.post_name }} Â· {{ period.team_name }}
             </p>
             <p class="mt-1 text-xs text-gray-500">
-                {{ period.start_date_label }} - {{ period.end_date_label }} · {{ period.members.length }} anggota · {{ period.schedules_count }} jadwal
+                {{ period.start_date_label }} - {{ period.end_date_label }} Â· {{ period.members.length }} anggota Â· {{ period.schedules_count }} jadwal
             </p>
         </div>
         <span class="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-600">
@@ -258,11 +317,13 @@ function statusVariant(status) {
             </div>
         </section>
     </div>
+                </form>
 </Card>
 
 
-            <Card>
-                <div class="mb-4 flex items-center justify-between gap-3">
+              <Card>
+                <form @submit.prevent="submit">
+<div class="mb-4 flex items-center justify-between gap-3">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-800">Snapshot Anggota</h3>
                         <p class="mt-0.5 text-xs text-gray-500">
@@ -308,10 +369,12 @@ function statusVariant(status) {
                         </table>
                     </div>
                 </div>
+                </form>
             </Card>
 
-            <Card>
-                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Card>
+                <form @submit.prevent="submit">
+<div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-800">Jadwal Tersimpan</h3>
                         <p class="mt-0.5 text-xs text-gray-500">
@@ -396,8 +459,23 @@ function statusVariant(status) {
                         </table>
                     </div>
                 </div>
+                </form>
             </Card>
         </div>
+
+        <DeleteSchedulePeriodModal
+            :open="deleteModalOpen"
+            :loading="deleteLoading"
+            :processing="deleteForm.processing"
+            :summary="deleteSummary"
+            :password="deleteForm.password"
+            :error="deleteError"
+            :password-error="deleteForm.errors?.password"
+            :period-error="deleteForm.errors?.period"
+            @update:password="deleteForm.password = $event"
+            @close="closeDeleteModal"
+            @confirm="submitDelete"
+        />
 
         <div
             v-if="editing"
@@ -412,7 +490,7 @@ function statusVariant(status) {
                 class="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl"
             >
                 <h3 id="edit-schedule-title" class="text-sm font-semibold text-gray-800">Edit Jadwal</h3>
-                <p class="mt-1 text-xs text-gray-500">{{ editing.full_name }} — {{ editing.date_label }}</p>
+                <p class="mt-1 text-xs text-gray-500">{{ editing.full_name }} â€” {{ editing.date_label }}</p>
 
                 <dl class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                     <div class="rounded-md border border-gray-200 p-3">
@@ -484,3 +562,4 @@ function statusVariant(status) {
         </div>
     </AdminLayout>
 </template>
+

@@ -10,6 +10,7 @@ use App\Models\SecurityPost;
 use App\Models\SecurityTeam;
 use App\Models\SecurityTeamMember;
 use App\Models\Unit;
+use App\Services\ActivityLogService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -147,6 +148,15 @@ class SecurityTeamController extends Controller
 
         $team = SecurityTeam::create($validated);
 
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Regu',
+            'description' => 'Membuat regu: '.$team->name,
+            'subject' => $team,
+            'unit_id' => $team->securityPost?->unit_id,
+            'new_values' => $team->only(['name', 'code', 'security_post_id', 'is_active', 'description']),
+        ]);
+
         return redirect()
             ->route('admin.security-team.show', $team->id)
             ->with('success', 'Regu berhasil ditambahkan.');
@@ -237,7 +247,18 @@ class SecurityTeamController extends Controller
             ]);
         }
 
+        $old = $team->only(['name', 'code', 'security_post_id', 'is_active', 'description']);
         $team->update($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Regu',
+            'description' => 'Mengubah regu: '.$team->name,
+            'subject' => $team,
+            'unit_id' => $team->securityPost?->unit_id,
+            'old_values' => $old,
+            'new_values' => $team->only(['name', 'code', 'security_post_id', 'is_active', 'description']),
+        ]);
 
         return redirect()
             ->route('admin.security-team.show', $team->id)
@@ -276,11 +297,23 @@ class SecurityTeamController extends Controller
             );
         }
 
+        $old = $team->only(['id', 'name', 'code', 'security_post_id', 'is_active']);
+        $unitId = $team->securityPost?->unit_id;
         try {
             DB::transaction(fn () => $team->delete());
         } catch (QueryException) {
             return back()->with('error', 'Tidak dapat menghapus regu yang masih digunakan.');
         }
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Regu',
+            'description' => 'Menghapus regu: '.($old['name'] ?? '-'),
+            'subject_type' => SecurityTeam::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $unitId,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.security-team.index')

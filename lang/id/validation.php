@@ -112,6 +112,7 @@ return [
     'unique' => ':attribute sudah digunakan.',
     'url' => ':attribute bukan URL yang valid.',
     'uuid' => ':attribute harus berupa UUID yang valid.',
+    'uploaded' => ':attribute gagal diunggah. Pastikan ukuran file tidak melebihi batas dan coba lagi.',
 
     'custom' => [
         'attribute-name' => [
@@ -130,6 +131,14 @@ return [
         'email' => 'email',
         'name' => 'nama',
         'role' => 'peran',
+        'selfie' => 'foto selfie',
+        'photo' => 'foto',
+        'photos' => 'foto',
+        'photos.*' => 'foto',
+        'image' => 'gambar',
+        'incident_photo' => 'foto insiden',
+        'kta_file' => 'file KTA',
+        'signature' => 'tanda tangan',
     ],
 
 ];

@@ -7,6 +7,7 @@ import FlashMessage from '@/Components/Admin/FlashMessage.vue';
 
 const props = defineProps({
     unit: { type: Object, required: true },
+    can_manage: { type: Boolean, default: false },
 });
 
 const details = [
@@ -37,19 +38,21 @@ function destroy() {
                 ]"
             >
                 <template #actions>
-                    <button
-                        type="button"
-                        class="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-xs text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-                        @click="destroy"
-                    >
-                        Hapus
-                    </button>
-                    <Link
-                        :href="`/admin/unit/${props.unit.id}/edit`"
-                        class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-xs text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                    >
-                        Edit
-                    </Link>
+                    <template v-if="can_manage">
+                        <button
+                            type="button"
+                            class="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-xs text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                            @click="destroy"
+                        >
+                            Hapus
+                        </button>
+                        <Link
+                            :href="`/admin/unit/${props.unit.id}/edit`"
+                            class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-xs text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        >
+                            Edit
+                        </Link>
+                    </template>
                     <Link
                         href="/admin/unit"
                         class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-xs text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"

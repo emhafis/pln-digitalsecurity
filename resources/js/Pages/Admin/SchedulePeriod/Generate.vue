@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, ref, watch } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
@@ -123,8 +123,9 @@ function submit() {
 
             <FlashMessage />
 
-            <Card>
-                <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <Card>
+                <form @submit.prevent="submit">
+<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-800">{{ period.name }}</h3>
                         <p class="mt-1 text-xs text-gray-500">
@@ -136,6 +137,7 @@ function submit() {
                         <p class="mt-1">{{ preview.period.schedules_count }} jadwal tersimpan saat ini</p>
                     </div>
                 </div>
+                </form>
             </Card>
 
             <div class="grid gap-3 lg:grid-cols-2">
@@ -189,8 +191,9 @@ function submit() {
                 </div>
             </div>
 
-            <Card>
-                <div class="mb-3">
+              <Card>
+                <form @submit.prevent="submit">
+<div class="mb-3">
                     <h3 class="text-sm font-semibold text-gray-800">Anggota & Pola Rotasi</h3>
                     <p class="mt-0.5 text-xs text-gray-500">
                         Offset 0 berarti siklus dimulai dari hari pertama pola pada tanggal awal periode.
@@ -237,10 +240,12 @@ function submit() {
                         </tbody>
                     </table>
                 </div>
+                </form>
             </Card>
 
-            <Card>
-                <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Card>
+                <form @submit.prevent="submit">
+<div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 class="text-sm font-semibold text-gray-800">Preview Jadwal</h3>
                         <p class="mt-0.5 text-xs text-gray-500">
@@ -271,7 +276,7 @@ function submit() {
                         </template>
                     </p>
                     <div class="mt-3 flex gap-2">
-                        <Button :disabled="form.processing" @click="submit">
+                        <Button :disabled="form.processing" type="submit">
                             {{ form.processing ? 'Memproses...' : 'Ya, Lanjutkan' }}
                         </Button>
                         <Button variant="secondary" :disabled="form.processing" @click="confirming = false">
@@ -341,7 +346,9 @@ function submit() {
                         </tbody>
                     </table>
                 </div>
+                </form>
             </Card>
         </div>
     </AdminLayout>
 </template>
+

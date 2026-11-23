@@ -10,7 +10,7 @@ const props = defineProps({
     meta: { type: Object, default: null },
 });
 
-defineEmits(['page-change']);
+defineEmits(['page-change', 'delete']);
 
 const openStatusId = ref(null);
 const updatingId = ref(null);
@@ -168,6 +168,22 @@ onBeforeUnmount(() => {
                     >
                         Edit
                     </Link>
+                    <button
+                        v-if="row.status !== 'completed'"
+                        type="button"
+                        class="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs text-red-600 transition hover:bg-red-50 hover:text-red-700"
+                        @click.stop="$emit('delete', row)"
+                    >
+                        Hapus
+                    </button>
+                    <span
+                        v-else
+                        class="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs text-gray-400"
+                        title="Periode selesai/dikunci tidak dapat dihapus"
+                        @click.stop
+                    >
+                        Terkunci
+                    </span>
                 </div>
             </td>
         </tr>

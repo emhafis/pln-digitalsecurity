@@ -48,7 +48,10 @@ const operationalNav = computed(() => [
     { label: 'Monitoring Kunjungan', href: '/admin/guest-book' },
     { label: user.value?.role === 'superadmin' ? 'Kelola QR Unit' : 'QR Unit', href: '/admin/guest-book/qr' },
     ...(user.value?.role === 'superadmin'
-        ? [{ label: 'Pengumuman', href: '/admin/announcements' }]
+        ? [
+            { label: 'Pengumuman', href: '/admin/announcements' },
+            { label: 'Log Aktivitas', href: '/admin/activity-log' },
+        ]
         : []),
 ]);
 

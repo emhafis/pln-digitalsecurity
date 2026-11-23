@@ -384,8 +384,28 @@ class PatrolController extends Controller
             'has_incident' => ['nullable', 'boolean'],
             'incident_description' => ['nullable', 'string'],
             'photos' => ['nullable', 'array', 'max:'.PatrolSessionOperationService::MAX_INCIDENT_PHOTOS],
-            'photos.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
-            'incident_photo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'photos.*' => ['file', 'max:10240', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! $value instanceof \Illuminate\Http\UploadedFile) {
+                    return;
+                }
+                $mime = strtolower((string) ($value->getMimeType() ?: ''));
+                $ext = strtolower((string) $value->getClientOriginalExtension());
+                $allowedExt = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg', 'heic', 'heif', 'avif', 'tif', 'tiff'];
+                if (! str_starts_with($mime, 'image/') && ! in_array($ext, $allowedExt, true)) {
+                    $fail('File foto insiden harus berupa gambar.');
+                }
+            }],
+            'incident_photo' => ['nullable', 'file', 'max:10240', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! $value instanceof \Illuminate\Http\UploadedFile) {
+                    return;
+                }
+                $mime = strtolower((string) ($value->getMimeType() ?: ''));
+                $ext = strtolower((string) $value->getClientOriginalExtension());
+                $allowedExt = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg', 'heic', 'heif', 'avif', 'tif', 'tiff'];
+                if (! str_starts_with($mime, 'image/') && ! in_array($ext, $allowedExt, true)) {
+                    $fail('File foto insiden harus berupa gambar.');
+                }
+            }],
         ]);
 
         $photos = $request->file('photos', []);

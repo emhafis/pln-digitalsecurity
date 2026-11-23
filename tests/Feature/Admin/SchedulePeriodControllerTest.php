@@ -2,6 +2,13 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Models\AttendanceRecord;
+use App\Models\PatrolPoint;
+use App\Models\PatrolScan;
+use App\Models\PatrolScanPhoto;
+use App\Models\PatrolSession;
+use App\Models\PatrolSessionMember;
+use App\Models\PatrolSessionPoint;
 use App\Models\Schedule;
 use App\Models\SchedulePattern;
 use App\Models\SchedulePeriod;
@@ -13,6 +20,7 @@ use App\Models\SecurityTeamMember;
 use App\Models\Shift;
 use App\Models\Unit;
 use App\Models\User;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Feature\Scheduling\SchedulingTestCase;
 
@@ -557,6 +565,224 @@ class SchedulePeriodControllerTest extends SchedulingTestCase
         $this->assertDatabaseCount('schedule_periods', 0);
     }
 
+    public function test_admin_can_delete_ungenerated_period_with_valid_password(): void
+    {
+        $unit = $this->createUnit();
+        [$post, $team] = $this->makeTeamContext($unit);
+        $admin = $this->createAdmin($unit);
+        $period = $this->createPeriod($unit, $post, $team, $admin, '2026-11-01', '2026-11-30', SchedulePeriod::STATUS_DRAFT, 'November');
+
+        $response = $this->actingAs($admin)->delete("/admin/schedule-period/{$period->id}", [
+            'password' => 'password',
+        ]);
+
+        $response->assertRedirect(route('admin.schedule-period.index'));
+        $response->assertSessionHas('success');
+        $this->assertDatabaseMissing('schedule_periods', ['id' => $period->id]);
+    }
+
+    public function test_delete_removes_generated_rotation_manual_members_and_activities(): void
+    {
+        Storage::fake('public');
+
+        $unit = $this->createUnit();
+        [$post, $team] = $this->makeTeamContext($unit);
+        $admin = $this->createAdmin($unit);
+        $securityA = $this->createSecurity($unit, 'Satpam A');
+        $securityB = $this->createSecurity($unit, 'Satpam B');
+        $shift = $this->createShift($unit, 'Pagi', 'PAGI');
+
+        $period = $this->createPeriod($unit, $post, $team, $admin, '2026-11-01', '2026-11-30', SchedulePeriod::STATUS_ACTIVE, 'November');
+        $memberA = $period->addMember($securityA);
+        $memberB = $period->addMember($securityB);
+
+        $rotation = $this->createSchedule($period, $memberA, $securityA, $admin, $shift, '2026-11-01', Schedule::SOURCE_SYSTEM_GENERATED);
+        $manual = $this->createSchedule($period, $memberB, $securityB, $admin, $shift, '2026-11-02', Schedule::SOURCE_ADJUSTMENT);
+
+        $record = AttendanceRecord::query()->create([
+            'schedule_id' => $rotation->id,
+            'schedule_period_id' => $period->id,
+            'security_id' => $securityA->id,
+            'security_post_id' => $post->id,
+            'shift_id' => $shift->id,
+            'work_date' => '2026-11-01',
+            'security_name' => $securityA->full_name,
+            'security_registration_number' => $securityA->registration_number,
+            'unit_id' => $unit->id,
+            'unit_name' => $unit->unit_name,
+            'security_team_id' => $team->id,
+            'security_team_name' => $team->name,
+            'security_post_name' => $post->name,
+            'shift_name' => $shift->name,
+            'shift_code' => $shift->code,
+            'shift_type' => Shift::TYPE_WORKING,
+            'shift_start_time' => '08:00:00',
+            'shift_end_time' => '16:00:00',
+            'shift_end_day_offset' => 0,
+            'setting_gps_radius_meters' => 100,
+            'setting_check_in_open_minutes' => 60,
+            'setting_late_tolerance_minutes' => 10,
+            'setting_early_checkout_tolerance_minutes' => 15,
+            'setting_checkout_close_minutes' => 120,
+            'setting_max_gps_accuracy_meters' => 100,
+            'status' => AttendanceRecord::STATUS_SCHEDULED,
+        ]);
+        $record->corrections()->create([
+            'requested_by' => $admin->id,
+            'requested_by_role' => 'admin',
+            'reason' => 'Test correction',
+            'status' => 'pending',
+        ]);
+
+        $session = PatrolSession::query()->create([
+            'schedule_period_id' => $period->id,
+            'security_team_id' => $team->id,
+            'security_post_id' => $post->id,
+            'unit_id' => $unit->id,
+            'shift_id' => $shift->id,
+            'work_date' => '2026-11-01',
+            'team_name' => $team->name,
+            'team_code' => $team->code,
+            'post_name' => $post->name,
+            'post_code' => $post->post_code,
+            'unit_name' => $unit->unit_name,
+            'unit_code' => $unit->unit_code,
+            'shift_name' => $shift->name,
+            'shift_code' => $shift->code,
+            'shift_type' => Shift::TYPE_WORKING,
+            'shift_start_time' => '08:00:00',
+            'shift_end_time' => '16:00:00',
+            'shift_end_day_offset' => 0,
+            'status' => PatrolSession::STATUS_PENDING,
+        ]);
+        PatrolSessionMember::query()->create([
+            'patrol_session_id' => $session->id,
+            'schedule_id' => $rotation->id,
+            'security_id' => $securityA->id,
+            'security_name' => $securityA->full_name,
+            'security_registration_number' => $securityA->registration_number,
+        ]);
+        $patrolPoint = PatrolPoint::query()->create([
+            'name' => 'Point A',
+            'security_post_id' => $post->id,
+        ]);
+        $point = PatrolSessionPoint::query()->create([
+            'patrol_session_id' => $session->id,
+            'patrol_point_id' => $patrolPoint->id,
+            'patrol_point_name' => $patrolPoint->name,
+            'patrol_point_qr_code' => $patrolPoint->qr_code,
+            'sequence' => 1,
+        ]);
+        $scan = PatrolScan::query()->create([
+            'patrol_session_id' => $session->id,
+            'patrol_point_id' => $patrolPoint->id,
+            'security_id' => $securityA->id,
+            'patrol_point_name' => $patrolPoint->name,
+            'patrol_point_qr_code' => $patrolPoint->qr_code,
+            'security_name' => $securityA->full_name,
+            'security_registration_number' => $securityA->registration_number,
+            'scanned_at' => now(),
+            'has_incident' => true,
+            'incident_description' => 'Test incident',
+            'incident_photo_path' => 'patrol-incidents/legacy.jpg',
+        ]);
+        Storage::disk('public')->put('patrol-incidents/legacy.jpg', 'legacy');
+        Storage::disk('public')->put('patrol-incidents/photo1.jpg', 'photo1');
+        PatrolScanPhoto::query()->create([
+            'patrol_scan_id' => $scan->id,
+            'photo_path' => 'patrol-incidents/photo1.jpg',
+            'sequence' => 1,
+        ]);
+
+        $otherUnit = $this->createUnit();
+        [$otherPost, $otherTeam] = $this->makeTeamContext($otherUnit, 'Pos Lain');
+        $otherPeriod = $this->createPeriod($otherUnit, $otherPost, $otherTeam, $admin, '2026-11-01', '2026-11-30', SchedulePeriod::STATUS_DRAFT, 'Other');
+        $otherSecurity = $this->createSecurity($otherUnit, 'Other');
+        $otherMember = $otherPeriod->addMember($otherSecurity);
+        $this->createSchedule($otherPeriod, $otherMember, $otherSecurity, $admin, $this->createShift($otherUnit, 'Malam', 'MLM'), '2026-11-01', Schedule::SOURCE_SYSTEM_GENERATED);
+
+        $response = $this->actingAs($admin)->delete("/admin/schedule-period/{$period->id}", [
+            'password' => 'password',
+        ]);
+
+        $response->assertRedirect(route('admin.schedule-period.index'));
+        $this->assertDatabaseMissing('schedule_periods', ['id' => $period->id]);
+        $this->assertDatabaseMissing('schedule_period_members', ['schedule_period_id' => $period->id]);
+        $this->assertDatabaseMissing('schedules', ['schedule_period_id' => $period->id]);
+        $this->assertDatabaseMissing('attendance_records', ['schedule_period_id' => $period->id]);
+        $this->assertDatabaseMissing('attendance_corrections', ['attendance_record_id' => $record->id]);
+        $this->assertDatabaseMissing('patrol_sessions', ['schedule_period_id' => $period->id]);
+        $this->assertDatabaseMissing('patrol_session_members', ['patrol_session_id' => $session->id]);
+        $this->assertDatabaseMissing('patrol_session_points', ['id' => $point->id]);
+        $this->assertDatabaseMissing('patrol_scans', ['id' => $scan->id]);
+        $this->assertDatabaseMissing('patrol_scan_photos', ['patrol_scan_id' => $scan->id]);
+        Storage::disk('public')->assertMissing('patrol-incidents/legacy.jpg');
+        Storage::disk('public')->assertMissing('patrol-incidents/photo1.jpg');
+
+        $this->assertDatabaseHas('schedule_periods', ['id' => $otherPeriod->id]);
+        $this->assertDatabaseCount('schedules', 1);
+    }
+
+    public function test_delete_rejects_wrong_password_empty_password_and_locked_period(): void
+    {
+        $unit = $this->createUnit();
+        [$post, $team] = $this->makeTeamContext($unit);
+        $admin = $this->createAdmin($unit);
+        $period = $this->createPeriod($unit, $post, $team, $admin, '2026-11-01', '2026-11-30', SchedulePeriod::STATUS_ACTIVE, 'November');
+
+        $this->actingAs($admin)->delete("/admin/schedule-period/{$period->id}", ['password' => 'wrong'])
+            ->assertSessionHasErrors('password');
+        $this->actingAs($admin)->delete("/admin/schedule-period/{$period->id}", ['password' => ''])
+            ->assertSessionHasErrors('password');
+        $this->assertDatabaseHas('schedule_periods', ['id' => $period->id]);
+
+        $period->update(['status' => SchedulePeriod::STATUS_COMPLETED]);
+        $this->actingAs($admin)->delete("/admin/schedule-period/{$period->id}", ['password' => 'password'])
+            ->assertSessionHasErrors('period');
+        $this->assertDatabaseHas('schedule_periods', ['id' => $period->id]);
+    }
+
+    public function test_delete_respects_authorization_and_unit_scope(): void
+    {
+        $unitA = $this->createUnit();
+        $unitB = $this->createUnit();
+        [$postA, $teamA] = $this->makeTeamContext($unitA);
+        [$postB, $teamB] = $this->makeTeamContext($unitB);
+        $adminA = $this->createAdmin($unitA);
+        $adminB = $this->createAdmin($unitB);
+        $periodB = $this->createPeriod($unitB, $postB, $teamB, $adminB, '2026-11-01', '2026-11-30', SchedulePeriod::STATUS_DRAFT, 'B');
+
+        $this->actingAs($adminA)->delete("/admin/schedule-period/{$periodB->id}", ['password' => 'password'])
+            ->assertForbidden();
+        $this->actingAs($adminA)->get("/admin/schedule-period/{$periodB->id}/delete-summary")
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('schedule_periods', ['id' => $periodB->id]);
+    }
+
+    public function test_delete_summary_returns_actual_counts(): void
+    {
+        $unit = $this->createUnit();
+        [$post, $team] = $this->makeTeamContext($unit);
+        $admin = $this->createAdmin($unit);
+        $security = $this->createSecurity($unit, 'Satpam A');
+        $shift = $this->createShift($unit, 'Pagi', 'PAGI');
+        $period = $this->createPeriod($unit, $post, $team, $admin, '2026-11-01', '2026-11-30', SchedulePeriod::STATUS_DRAFT, 'November');
+        $member = $period->addMember($security);
+        $this->createSchedule($period, $member, $security, $admin, $shift, '2026-11-01', Schedule::SOURCE_SYSTEM_GENERATED);
+        $this->createSchedule($period, $member, $security, $admin, $shift, '2026-11-02', Schedule::SOURCE_ADJUSTMENT);
+
+        $response = $this->actingAs($admin)->getJson("/admin/schedule-period/{$period->id}/delete-summary");
+
+        $response->assertOk();
+        $response->assertJsonPath('period.id', $period->id);
+        $response->assertJsonPath('is_locked', false);
+        $response->assertJsonPath('can_delete', true);
+        $response->assertJsonFragment(['key' => 'schedules_rotation', 'label' => 'Jadwal rotation', 'count' => 1]);
+        $response->assertJsonFragment(['key' => 'schedules_manual', 'label' => 'Jadwal manual', 'count' => 1]);
+        $response->assertJsonFragment(['key' => 'members', 'label' => 'Snapshot anggota regu', 'count' => 1]);
+    }
+
     /**
      * @return array{0: SecurityPost, 1: SecurityTeam}
      */
@@ -608,15 +834,17 @@ class SchedulePeriodControllerTest extends SchedulingTestCase
         SchedulePeriodMember $member,
         Security $security,
         User $admin,
-        Shift $shift
+        Shift $shift,
+        ?string $date = null,
+        string $source = Schedule::SOURCE_ADJUSTMENT
     ): Schedule {
         return Schedule::create([
             'schedule_period_id' => $period->id,
             'schedule_period_member_id' => $member->id,
             'security_id' => $security->id,
             'shift_id' => $shift->id,
-            'date' => $period->start_date->toDateString(),
-            'source' => Schedule::SOURCE_ADJUSTMENT,
+            'date' => $date ?? $period->start_date->toDateString(),
+            'source' => $source,
             'created_by' => $admin->id,
         ]);
     }

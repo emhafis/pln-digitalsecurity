@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { Link, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
@@ -39,8 +39,9 @@ function submit() {
 
             <FlashMessage />
 
-            <Card>
-                <ShiftForm :form="form" :units="units" />
+              <Card>
+                <form @submit.prevent="submit">
+<ShiftForm :form="form" :units="units" />
 
                 <div class="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
                     <Link
@@ -49,11 +50,13 @@ function submit() {
                     >
                         Batal
                     </Link>
-                    <Button :disabled="form.processing" @click="submit">
+                    <Button :disabled="form.processing" type="submit">
                         Simpan
                     </Button>
                 </div>
+                </form>
             </Card>
         </div>
     </AdminLayout>
 </template>
+

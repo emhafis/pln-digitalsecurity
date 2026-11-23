@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -146,7 +147,7 @@ class UserController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ]);
 
-        User::create([
+        $user = User::create([
             'username' => $validated['username'],
             'name' => $validated['name'],
             'email' => $validated['email'] ?? null,
@@ -154,6 +155,15 @@ class UserController extends Controller
             'unit_id' => $validated['unit_id'] ?? null,
             'role' => $validated['role'],
             'is_active' => $validated['is_active'] ?? true,
+        ]);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'created',
+            'module' => 'Akun User',
+            'description' => 'Membuat akun user: '.$user->username.' ('.$user->role.')',
+            'subject' => $user,
+            'unit_id' => $user->unit_id,
+            'new_values' => $user->only(['username', 'name', 'email', 'role', 'unit_id', 'is_active']),
         ]);
 
         return redirect()
@@ -215,7 +225,18 @@ class UserController extends Controller
             $validated['password'] = Hash::make($validated['password']);
         }
 
+        $old = $user->only(['username', 'name', 'email', 'role', 'unit_id', 'is_active']);
         $user->update($validated);
+
+        app(ActivityLogService::class)->log([
+            'action' => 'updated',
+            'module' => 'Akun User',
+            'description' => 'Mengubah akun user: '.$user->username,
+            'subject' => $user,
+            'unit_id' => $user->unit_id,
+            'old_values' => $old,
+            'new_values' => $user->only(['username', 'name', 'email', 'role', 'unit_id', 'is_active']),
+        ]);
 
         return redirect()
             ->route('admin.user.index', ['role' => $group])
@@ -233,7 +254,18 @@ class UserController extends Controller
 
         $user = $this->scopedUser($request, $id);
         $group = $user->role === 'security' ? 'security' : 'admin';
+        $old = $user->only(['id', 'username', 'name', 'email', 'role', 'unit_id', 'is_active']);
         $user->delete();
+
+        app(ActivityLogService::class)->log([
+            'action' => 'deleted',
+            'module' => 'Akun User',
+            'description' => 'Menghapus akun user: '.($old['username'] ?? '-'),
+            'subject_type' => User::class,
+            'subject_id' => $old['id'] ?? $id,
+            'unit_id' => $old['unit_id'] ?? null,
+            'old_values' => $old,
+        ]);
 
         return redirect()
             ->route('admin.user.index', ['role' => $group])

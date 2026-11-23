@@ -37,6 +37,13 @@ class GuestBookController extends Controller
             return $this->invalidQrResponse($request, 422);
         }
 
+        $selfieFile = $request->file('selfie');
+        if ($selfieFile && ! $selfieFile->isValid()) {
+            throw ValidationException::withMessages([
+                'selfie' => 'Foto selfie gagal diunggah. Pastikan ukuran maksimal 10 MB dan format gambar valid, lalu coba lagi.',
+            ]);
+        }
+
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
             'phone_number' => ['required', 'string', 'max:20'],
@@ -46,12 +53,26 @@ class GuestBookController extends Controller
             'person_to_meet' => ['required', 'string', 'max:255'],
             'vehicle_plate_number' => ['nullable', 'string', 'max:20'],
             'consent_given' => ['accepted'],
-            'selfie' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'selfie' => ['nullable', 'file', 'max:10240', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! $value instanceof \Illuminate\Http\UploadedFile) {
+                    return;
+                }
+                $mime = strtolower((string) ($value->getMimeType() ?: ''));
+                $ext = strtolower((string) $value->getClientOriginalExtension());
+                $allowedExt = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg', 'heic', 'heif', 'avif', 'tif', 'tiff'];
+                if (! str_starts_with($mime, 'image/') && ! in_array($ext, $allowedExt, true)) {
+                    $fail('Foto selfie harus berupa gambar.');
+                }
+            }],
             'signature' => ['nullable', 'string', 'max:500000'],
             'unit_id' => ['prohibited'],
             'check_in_at' => ['prohibited'],
         ], [
             'consent_given.accepted' => 'Persetujuan penggunaan data wajib diberikan.',
+            'selfie.file' => 'Foto selfie harus berupa gambar.',
+            'selfie.mimetypes' => 'Foto selfie harus berupa gambar.',
+            'selfie.max' => 'Ukuran foto selfie maksimal 10 MB.',
+            'selfie.uploaded' => 'Foto selfie gagal diunggah. Pastikan ukuran maksimal 10 MB dan coba lagi.',
         ]);
 
         $storedPaths = [];

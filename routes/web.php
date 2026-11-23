@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\ActivityLogController;
 use App\Http\Controllers\Admin\AnnouncementController as AdminAnnouncementController;
 use App\Http\Controllers\Admin\AparController;
 use App\Http\Controllers\Admin\AparInspectionController;
@@ -136,6 +137,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/security-team/create', [SecurityTeamController::class, 'create'])->name('security-team.create');
         Route::get('/security-team/{id}/edit', [SecurityTeamController::class, 'edit'])->whereNumber('id')->name('security-team.edit');
         Route::put('/security-team/{id}', [SecurityTeamController::class, 'update'])->whereNumber('id')->name('security-team.update');
+        Route::patch('/security-team/{id}/toggle', [SecurityTeamController::class, 'toggle'])->whereNumber('id')->name('security-team.toggle');
+        Route::post('/security-team/{id}/member', [SecurityTeamController::class, 'storeMember'])->whereNumber('id')->name('security-team.member.store');
+        Route::put('/security-team/{id}/member/{memberId}/end', [SecurityTeamController::class, 'endMember'])->whereNumber('id')->whereNumber('memberId')->name('security-team.member.end');
         Route::delete('/security-team/{id}', [SecurityTeamController::class, 'destroy'])->whereNumber('id')->name('security-team.destroy');
         Route::get('/security-team/{id}', [SecurityTeamController::class, 'show'])->whereNumber('id')->name('security-team.show');
 
@@ -171,6 +175,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/schedule-period/{id}/edit', [SchedulePeriodController::class, 'edit'])->whereNumber('id')->name('schedule-period.edit');
         Route::put('/schedule-period/{id}', [SchedulePeriodController::class, 'update'])->whereNumber('id')->name('schedule-period.update');
         Route::patch('/schedule-period/{id}/status', [SchedulePeriodController::class, 'updateStatus'])->whereNumber('id')->name('schedule-period.status');
+        Route::get('/schedule-period/{id}/delete-summary', [SchedulePeriodController::class, 'deleteSummary'])->whereNumber('id')->name('schedule-period.delete-summary');
         Route::delete('/schedule-period/{id}', [SchedulePeriodController::class, 'destroy'])->whereNumber('id')->name('schedule-period.destroy');
         Route::get('/schedule-period/{id}', [SchedulePeriodController::class, 'show'])->whereNumber('id')->name('schedule-period.show');
 
@@ -221,6 +226,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/announcements/{announcement}/edit', [AdminAnnouncementController::class, 'edit'])->whereNumber('announcement')->name('announcements.edit');
             Route::put('/announcements/{announcement}', [AdminAnnouncementController::class, 'update'])->whereNumber('announcement')->name('announcements.update');
             Route::delete('/announcements/{announcement}', [AdminAnnouncementController::class, 'destroy'])->whereNumber('announcement')->name('announcements.destroy');
+
+            Route::get('/activity-log', [ActivityLogController::class, 'index'])->name('activity-log.index');
+            Route::get('/activity-log/{activityLog}', [ActivityLogController::class, 'show'])->whereNumber('activityLog')->name('activity-log.show');
         });
 
         Route::get('/guest-book/qr', [GuestBookQrController::class, 'index'])->name('guest-book.qr.index');

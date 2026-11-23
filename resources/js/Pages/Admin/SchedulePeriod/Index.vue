@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { Link, router, usePage } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
+import axios from 'axios';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
 import Card from '@/Components/Admin/Card.vue';
 import FlashMessage from '@/Components/Admin/FlashMessage.vue';
+import DeleteSchedulePeriodModal from './Partials/DeleteSchedulePeriodModal.vue';
 import SchedulePeriodFilter from './Partials/SchedulePeriodFilter.vue';
 import SchedulePeriodTable from './Partials/SchedulePeriodTable.vue';
 
@@ -37,6 +39,13 @@ let debounce = null;
 
 const page = usePage();
 const bulkCreated = computed(() => page.props.flash?.bulk_created ?? []);
+
+const deleteModalOpen = ref(false);
+const deleteLoading = ref(false);
+const deleteSummary = ref(null);
+const deleteError = ref('');
+const deletingPeriod = ref(null);
+const deleteForm = useForm({ password: '' });
 
 function applyQuery(page = 1) {
     router.get('/admin/schedule-period', {
@@ -80,6 +89,58 @@ watch(teamId, () => applyQuery(1));
 watch(status, () => applyQuery(1));
 watch(startDate, () => applyQuery(1));
 watch(endDate, () => applyQuery(1));
+
+async function openDeleteModal(row) {
+    deletingPeriod.value = row;
+    deleteModalOpen.value = true;
+    deleteLoading.value = true;
+    deleteSummary.value = null;
+    deleteError.value = '';
+    deleteForm.reset();
+    deleteForm.clearErrors();
+
+    try {
+        const response = await axios.get(`/admin/schedule-period/${row.id}/delete-summary`);
+        deleteSummary.value = response.data;
+        if (response.data?.is_locked) {
+            deleteError.value = response.data.locked_reason || 'Periode tidak dapat dihapus karena sudah selesai atau dikunci.';
+        }
+    } catch (error) {
+        deleteError.value = error?.response?.data?.message || 'Gagal memuat rincian data yang akan dihapus.';
+    } finally {
+        deleteLoading.value = false;
+    }
+}
+
+function closeDeleteModal() {
+    if (deleteForm.processing) return;
+    deleteModalOpen.value = false;
+    deletingPeriod.value = null;
+    deleteSummary.value = null;
+    deleteError.value = '';
+    deleteForm.reset();
+    deleteForm.clearErrors();
+}
+
+function submitDelete() {
+    if (!deletingPeriod.value || deleteForm.processing) return;
+    deleteError.value = '';
+    deleteForm.clearErrors();
+
+    deleteForm.delete(`/admin/schedule-period/${deletingPeriod.value.id}`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            deleteModalOpen.value = false;
+            deletingPeriod.value = null;
+            deleteSummary.value = null;
+            deleteForm.reset();
+            applyQuery(1);
+        },
+        onError: (errors) => {
+            if (errors?.period) deleteError.value = errors.period;
+        },
+    });
+}
 </script>
 
 <template>
@@ -157,8 +218,22 @@ watch(endDate, () => applyQuery(1));
                     :teams="teams"
                     :count="meta.total"
                 />
-                <SchedulePeriodTable :rows="periods" :meta="meta" @page-change="go" />
+                <SchedulePeriodTable :rows="periods" :meta="meta" @page-change="go" @delete="openDeleteModal" />
             </Card>
+
+            <DeleteSchedulePeriodModal
+                :open="deleteModalOpen"
+                :loading="deleteLoading"
+                :processing="deleteForm.processing"
+                :summary="deleteSummary"
+                :password="deleteForm.password"
+                :error="deleteError"
+                :password-error="deleteForm.errors?.password"
+                :period-error="deleteForm.errors?.period"
+                @update:password="deleteForm.password = $event"
+                @close="closeDeleteModal"
+                @confirm="submitDelete"
+            />
         </div>
     </AdminLayout>
 </template>

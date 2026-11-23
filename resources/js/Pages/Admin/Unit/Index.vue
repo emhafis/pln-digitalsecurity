@@ -15,6 +15,7 @@ const props = defineProps({
     search: { type: String, default: '' },
     sort: { type: String, default: 'name' },
     dir: { type: String, default: 'asc' },
+    can_manage: { type: Boolean, default: false },
 });
 
 const search = ref(props.search);
@@ -56,7 +57,7 @@ watch(sort, () => applyQuery(1));
                     { label: 'Main' },
                 ]"
             >
-                <template #actions>
+                <template v-if="can_manage" #actions>
                     <Button variant="secondary">Ekspor</Button>
                     <Link
                         href="/admin/unit/create"
@@ -71,7 +72,7 @@ watch(sort, () => applyQuery(1));
 
             <Card>
                 <UnitFilter v-model="search" v-model:sort="sort" :count="meta.total" placeholder="Cari unit..." />
-                <UnitTable :rows="units" :meta="meta" @page-change="go" />
+                <UnitTable :rows="units" :meta="meta" :can-manage="can_manage" @page-change="go" />
             </Card>
         </div>
     </AdminLayout>

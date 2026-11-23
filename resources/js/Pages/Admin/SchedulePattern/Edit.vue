@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { Link, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import PageHeader from '@/Components/Admin/PageHeader.vue';
@@ -52,8 +52,9 @@ function submit() {
 
             <FlashMessage />
 
-            <Card>
-                <SchedulePatternForm
+              <Card>
+                <form @submit.prevent="submit">
+<SchedulePatternForm
                     :form="form"
                     :units="units"
                     :shifts="shifts"
@@ -69,11 +70,13 @@ function submit() {
                     >
                         Batal
                     </Link>
-                    <Button :disabled="form.processing" @click="submit">
+                    <Button :disabled="form.processing" type="submit">
                         Simpan Perubahan
                     </Button>
                 </div>
+                </form>
             </Card>
         </div>
     </AdminLayout>
 </template>
+

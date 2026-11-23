@@ -13,7 +13,7 @@ function logout() {
 
 const org = 'PLN UID ACEH';
 const role = 'Satpam';
-const avatar = computed(() => props.security?.photo_url || '/images/app/avatar-placeholder.png');
+const avatar = computed(() => props.security?.photo_url || '');
 
 const displayName = computed(() => props.security?.full_name?.trim() || 'Satpam');
 
@@ -77,12 +77,13 @@ function onImageError(event) {
                 <!-- Avatar -->
                 <div class="flex h-[58px] w-[58px] shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white/30 bg-white text-lg font-semibold text-[#1D567F] shadow-[0_2px_8px_rgba(0,0,0,.2)] [text-shadow:none]">
                     <img
+                        v-if="avatar"
                         :src="avatar"
                         alt=""
                         class="h-full w-full object-cover"
                         @error="onImageError"
                     />
-                    <span>{{ initials }}</span>
+                    <span v-else>{{ initials }}</span>
                 </div>
 
                 <!-- Nama dan Jabatan -->

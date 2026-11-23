@@ -46,27 +46,29 @@ function submit() {
             <FlashMessage />
 
             <Card>
-                <UserForm
-                    :form="form"
-                    :group="props.group"
-                    :units="props.units"
-                    :show-status="true"
-                />
+                <form @submit.prevent="submit">
+                    <UserForm
+                        :form="form"
+                        :group="props.group"
+                        :units="props.units"
+                        :show-status="true"
+                    />
 
-                <div class="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
-                    <Link
-                        :href="`/admin/user?role=${props.group}`"
-                        class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-xs text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
-                    >
-                        Batal
-                    </Link>
-                    <Button
-                        :disabled="form.processing"
-                        @click="submit"
-                    >
-                        Simpan Perubahan
-                    </Button>
-                </div>
+                    <div class="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
+                        <Link
+                            :href="`/admin/user?role=${props.group}`"
+                            class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-xs text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
+                        >
+                            Batal
+                        </Link>
+                        <Button
+                            type="submit"
+                            :disabled="form.processing"
+                        >
+                            Simpan Perubahan
+                        </Button>
+                    </div>
+                </form>
             </Card>
         </div>
     </AdminLayout>

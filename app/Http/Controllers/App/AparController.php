@@ -118,9 +118,11 @@ class AparController extends Controller
             'items.size' => 'Checklist inspeksi wajib diisi lengkap.',
             'items.*.is_good.required' => 'Status setiap item checklist wajib dipilih.',
             'photos.max' => 'Jumlah foto inspeksi maksimal '.AssetInspectionRules::MAX_PHOTOS.' file.',
+            'photos.*.file' => 'File foto inspeksi harus berupa gambar.',
+            'photos.*.mimetypes' => 'File foto inspeksi harus berupa gambar.',
             'photos.*.image' => 'File foto inspeksi harus berupa gambar.',
-            'photos.*.mimes' => 'Format foto harus jpg, jpeg, png, atau webp.',
-            'photos.*.max' => 'Ukuran tiap foto maksimal 2 MB.',
+            'photos.*.mimes' => 'File foto inspeksi harus berupa gambar.',
+            'photos.*.max' => 'Ukuran tiap foto maksimal 10 MB.',
         ]);
 
         $submittedItems = is_array($validated['items'] ?? null) ? $validated['items'] : [];
