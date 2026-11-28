@@ -65,13 +65,17 @@ class AttendanceActivityService
                 ]);
             }
 
-            if ($now->greaterThan($locked->scheduled_end_at)) {
+            $toleranceMinutes = $locked->checkInToleranceMinutes();
+            $deadline = $locked->scheduled_start_at->copy()->addMinutes($toleranceMinutes);
+
+            if ($now->greaterThan($deadline)) {
                 throw ValidationException::withMessages([
-                    'attendance' => 'Waktu check-in sudah berakhir.',
+                    'attendance' => 'Waktu absen masuk telah melewati batas toleransi. Silakan hubungi Admin.',
                 ]);
             }
 
             $gps = $this->validateGps($locked, $payload);
+            $lateMinutes = max(0, $locked->scheduled_start_at->diffInMinutes($now, false));
 
             $locked->forceFill([
                 'check_in_at' => $now,
@@ -81,6 +85,8 @@ class AttendanceActivityService
                 'check_in_accuracy_meters' => $gps['accuracy'],
                 'check_in_distance_meters' => $gps['distance'],
                 'check_in_geofence_valid' => true,
+                'check_in_late_minutes' => $lateMinutes,
+                'setting_check_in_tolerance_minutes' => $toleranceMinutes,
                 'status' => AttendanceRecord::STATUS_IN_PROGRESS,
                 'snapshot_locked_at' => $locked->snapshot_locked_at ?? $now,
             ])->save();

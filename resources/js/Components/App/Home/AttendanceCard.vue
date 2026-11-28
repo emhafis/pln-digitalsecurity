@@ -49,7 +49,11 @@ function formatTime(value) {
     return s.length >= 5 ? s.slice(0, 5) : s;
 }
 
-const dateLabel = computed(() => props.operational_date?.label || '-');
+const dateLabel = computed(() => {
+    if (props.attendance?.work_date_label) return props.attendance.work_date_label;
+    if (props.schedule?.date) return props.schedule.date;
+    return props.operational_date?.label || '-';
+});
 const shiftName = computed(() => props.shift?.name || '-');
 
 const shiftTimeLabel = computed(() => {
@@ -86,7 +90,9 @@ const statusTone = computed(() => {
     if (s === 'completed') return 'text-emerald-700';
     if (s === 'absent') return 'text-rose-600';
     if (s === 'in_progress') return 'text-[#1D567F]';
+    if (s === 'overdue_checkout') return 'text-amber-700';
     if (s === 'pending') return 'text-amber-600';
+    if (s === 'scheduled') return 'text-slate-600';
     return 'text-gray-700';
 });
 
@@ -97,14 +103,17 @@ const statusDot = computed(() => {
     if (s === 'completed') return 'bg-emerald-500';
     if (s === 'absent') return 'bg-rose-500';
     if (s === 'in_progress') return 'bg-[#1D567F]';
+    if (s === 'overdue_checkout') return 'bg-amber-500';
     if (s === 'pending') return 'bg-amber-500';
+    if (s === 'scheduled') return 'bg-slate-400';
 
     return 'bg-gray-400';
 });
 
-const checkInLabel = computed(() => props.attendance?.check_in_label || 'Belum absen');
-const checkOutLabel = computed(() => props.attendance?.check_out_label || 'Belum absen');
+const checkInLabel = computed(() => props.attendance?.check_in_label || 'Belum Absen Masuk');
+const checkOutLabel = computed(() => props.attendance?.check_out_label || (props.attendance?.check_in_label ? 'Belum Absen Keluar' : '-'));
 const isLate = computed(() => !!props.attendance?.is_late);
+const lateLabel = computed(() => props.attendance?.late_label || (isLate.value ? 'Terlambat' : ''));
 const totalWorkLabel = computed(() => props.attendance?.total_work_label || null);
 
 const showScheduleInfo = computed(() =>
@@ -141,14 +150,14 @@ const action = computed(() => {
     }
 
     if (status === 'absent') {
-        return { type: 'info', text: 'Anda tercatat tidak hadir.' };
+        return { type: 'info', text: 'Anda tercatat tidak hadir. Hubungi Admin jika ini tidak sesuai.' };
     }
 
     if (status === 'day_off') {
         return { type: 'none' };
     }
 
-    if (status === 'in_progress') {
+    if (status === 'in_progress' || status === 'overdue_checkout') {
         const outOpen = toDate(win?.check_out_opens_at);
         const outClose = toDate(win?.check_out_closes_at);
         const current = now.value;
@@ -162,23 +171,23 @@ const action = computed(() => {
         }
 
         if (outClose && current > outClose) {
-            return { type: 'info', text: 'Batas waktu absen keluar telah berakhir.' };
+            return { type: 'info', text: 'Batas waktu absen keluar telah berakhir. Silakan ajukan koreksi jika diperlukan.' };
         }
 
-        return { type: 'info', text: 'Anda sedang bertugas.' };
+        return { type: 'info', text: status === 'overdue_checkout' ? 'Anda belum absen keluar. Segera lakukan absen keluar.' : 'Anda sedang bertugas.' };
     }
 
     if (status === 'scheduled' || status === 'pending') {
         const inOpen = toDate(win?.check_in_opens_at);
-        const inClose = toDate(win?.scheduled_end_at);
+        const inDeadline = toDate(win?.late_at);
         const current = now.value;
 
         if (inOpen && current < inOpen) {
             return { type: 'info', text: `Absen masuk dibuka pukul ${win?.check_in_opens_label || '-'}.` };
         }
 
-        if (inClose && current > inClose) {
-            return { type: 'info', text: 'Waktu absen masuk telah berakhir.' };
+        if (inDeadline && current > inDeadline) {
+            return { type: 'info', text: 'Waktu absen masuk telah melewati batas toleransi. Silakan hubungi Admin.' };
         }
 
         if (!att.check_in_at) {
@@ -317,10 +326,11 @@ const cardClass = computed(() => (
                     </p>
 
                     <p
-                        v-if="isLate && showAttendanceTimes"
-                        class="mt-0.5 text-[11px] font-medium text-rose-600"
+                        v-if="showAttendanceTimes && lateLabel"
+                        class="mt-0.5 text-[11px] font-medium"
+                        :class="isLate ? 'text-rose-600' : 'text-emerald-600'"
                     >
-                        Terlambat
+                        {{ lateLabel }}
                     </p>
                 </div>
 

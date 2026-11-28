@@ -29,6 +29,7 @@ const statusVariants = {
     scheduled: 'gray',
     pending: 'amber',
     in_progress: 'blue',
+    overdue_checkout: 'amber',
     completed: 'emerald',
     absent: 'red',
     day_off: 'gray',
@@ -215,7 +216,7 @@ function goToPage(page) {
                     </td>
                     <td class="whitespace-nowrap">
                         <span class="text-gray-800">{{ record.check_in ?? '-' }}</span>
-                        <span v-if="record.is_late" class="ml-1 text-xs font-medium text-red-600">Terlambat</span>
+                        <span v-if="record.late_label" class="ml-1 text-xs font-medium" :class="record.is_late ? 'text-red-600' : 'text-emerald-600'">{{ record.late_label }}</span>
                     </td>
                     <td class="whitespace-nowrap text-gray-800">{{ record.check_out ?? '-' }}</td>
                     <td>

@@ -283,6 +283,7 @@ class AttendanceGenerator
             'setting_gps_radius_meters' => $settings->gps_radius_meters,
             'setting_check_in_open_minutes' => $settings->check_in_open_minutes,
             'setting_late_tolerance_minutes' => $settings->late_tolerance_minutes,
+            'setting_check_in_tolerance_minutes' => $settings->late_tolerance_minutes,
             'setting_early_checkout_tolerance_minutes' => $settings->early_checkout_tolerance_minutes,
             'setting_checkout_close_minutes' => $settings->checkout_close_minutes,
             'setting_max_gps_accuracy_meters' => $settings->max_gps_accuracy_meters,

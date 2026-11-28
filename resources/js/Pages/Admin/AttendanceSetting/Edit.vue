@@ -45,8 +45,8 @@ const fields = [
     },
     {
         key: 'late_tolerance_minutes',
-        label: 'Toleransi Keterlambatan (menit)',
-        hint: 'Check-in setelah batas ini dianggap terlambat.',
+        label: 'Toleransi Waktu Absen Masuk (menit)',
+        hint: 'Batas akhir check-in adalah jam mulai shift + toleransi. Keterlambatan tetap dihitung dari jam mulai shift.',
         min: 0,
     },
     {
@@ -58,7 +58,7 @@ const fields = [
     {
         key: 'checkout_close_minutes',
         label: 'Check-out Ditutup (menit setelah shift)',
-        hint: 'Setelah batas ini, check-out tidak dapat dilakukan dan data ditandai Tidak Hadir bila belum check-in.',
+        hint: 'Batas waktu check-out setelah shift selesai. Setelah melewati batas ini, sesi check-out ditutup.',
         min: 0,
     },
 ];

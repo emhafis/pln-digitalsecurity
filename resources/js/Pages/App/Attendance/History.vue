@@ -54,6 +54,7 @@ function statusClasses(s) {
         case 'absent': return 'bg-red-50 text-[#E76B83] border-red-200';
         case 'in_progress': return 'bg-[#E8F0F6] text-[#1D567F] border-[#cfe0ee]';
         case 'pending': return 'bg-amber-50 text-amber-700 border-amber-200';
+        case 'overdue_checkout': return 'bg-amber-50 text-amber-700 border-amber-200';
         case 'day_off': return 'bg-gray-100 text-gray-600 border-gray-200';
         case 'scheduled': return 'bg-slate-50 text-slate-600 border-slate-200';
         default: return 'bg-gray-50 text-gray-600 border-gray-200';
@@ -154,7 +155,7 @@ function correctionClasses(s) {
                                         <span>Masuk</span>
                                     </div>
                                     <p class="mt-0.5 text-sm font-semibold text-[#263746]">{{ item.check_in_label || '-' }}</p>
-                                    <p v-if="item.is_late" class="mt-0.5 text-[11px] font-medium text-[#E76B83]">Terlambat</p>
+                                    <p v-if="item.late_label" class="mt-0.5 text-[11px] font-medium" :class="item.is_late ? 'text-[#E76B83]' : 'text-emerald-600'">{{ item.late_label }}</p>
                                 </div>
                                 <div class="rounded-lg bg-gray-50 p-2.5">
                                     <div class="flex items-center gap-1.5 text-[11px] text-[#9299A2]">

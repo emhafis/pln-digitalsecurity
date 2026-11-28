@@ -30,7 +30,7 @@ class AttendanceKehadiranTest extends AttendanceTestCase
                 ->where('security.id', $this->security->id)
                 ->where('shift.name', 'Pagi')
                 ->where('attendance.status', AttendanceRecord::STATUS_PENDING)
-                ->where('attendance.status_label', 'Menunggu Check-in')
+                ->where('attendance.status_label', 'Belum Absen Masuk')
                 ->where('attendance.work_date', '2026-11-02')
             );
     }

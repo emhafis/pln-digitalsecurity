@@ -225,20 +225,20 @@ class AttendanceHttpTest extends AttendanceTestCase
         $this->assertNotNull($record->snapshot_locked_at);
     }
 
-    public function test_check_in_is_on_time_at_window_boundaries_and_within_tolerance(): void
+    public function test_check_in_is_on_time_at_window_boundaries_and_late_within_tolerance(): void
     {
         $this->makeContext('2026-11-02', '2026-11-04');
 
-        // Exactly at check-in open (start - 15m) is allowed and on time
         $record = $this->generateForSchedule();
         $this->travelToWib('2026-11-02 06:45:00');
         $this->actingAs($this->security->user)
             ->post("/app/attendance/{$record->id}/check-in", $this->validGpsPayload())
             ->assertRedirect();
-        $this->assertFalse($record->refresh()->isLate());
+        $record->refresh();
+        $this->assertFalse($record->isLate());
+        $this->assertSame('Tepat Waktu', $record->lateLabel());
         $this->assertSame(AttendanceRecord::STATUS_IN_PROGRESS, $record->status);
 
-        // Exactly at shift start boundary of on-time (start + 5m) is on time
         $this->schedule = $this->makeSchedule($this->shift, '2026-11-03');
         $this->generate();
         $record2 = AttendanceRecord::query()->where('schedule_id', $this->schedule->id)->firstOrFail();
@@ -246,29 +246,33 @@ class AttendanceHttpTest extends AttendanceTestCase
         $this->actingAs($this->security->user)
             ->post("/app/attendance/{$record2->id}/check-in", $this->validGpsPayload())
             ->assertRedirect();
-        $this->assertFalse($record2->refresh()->isLate());
+        $record2->refresh();
+        $this->assertTrue($record2->isLate());
+        $this->assertSame(5, $record2->lateMinutes());
 
-        // Exactly at shift end is still allowed (end of window)
         $this->schedule = $this->makeSchedule($this->shift, '2026-11-04');
         $this->generate();
         $record3 = AttendanceRecord::query()->where('schedule_id', $this->schedule->id)->firstOrFail();
-        $this->travelToWib('2026-11-04 15:00:00');
+        $this->travelToWib('2026-11-04 07:06:00');
         $this->actingAs($this->security->user)
             ->post("/app/attendance/{$record3->id}/check-in", $this->validGpsPayload())
-            ->assertRedirect();
-        $this->assertNotNull($record3->refresh()->check_in_at);
+            ->assertSessionHasErrors('attendance');
+        $this->assertNull($record3->refresh()->check_in_at);
     }
 
-    public function test_check_in_after_tolerance_is_marked_late(): void
+    public function test_check_in_after_shift_start_is_late_but_allowed_within_tolerance(): void
     {
         $record = $this->generateForSchedule();
-        $this->travelToWib('2026-11-02 07:06:00');
+        $this->travelToWib('2026-11-02 07:01:00');
 
         $this->actingAs($this->security->user)
             ->post("/app/attendance/{$record->id}/check-in", $this->validGpsPayload())
             ->assertRedirect();
 
-        $this->assertTrue($record->refresh()->isLate());
+        $record->refresh();
+        $this->assertTrue($record->isLate());
+        $this->assertSame(1, $record->lateMinutes());
+        $this->assertSame('Terlambat 1 menit', $record->lateLabel());
     }
 
     public function test_check_in_fails_when_gps_outside_radius_or_accuracy_exceeds_limit_or_invalid(): void
@@ -306,7 +310,7 @@ class AttendanceHttpTest extends AttendanceTestCase
             ])->assertSessionHasErrors('accuracy');
     }
 
-    public function test_check_in_fails_before_window_opens_or_after_window_closes(): void
+    public function test_check_in_fails_before_window_opens_or_after_tolerance_deadline(): void
     {
         $this->makeContext('2026-11-02', '2026-11-03');
         $record = $this->generateForSchedule();
@@ -320,11 +324,46 @@ class AttendanceHttpTest extends AttendanceTestCase
         $this->schedule = $this->makeSchedule($this->shift, '2026-11-03');
         $this->generate();
         $record2 = AttendanceRecord::query()->where('schedule_id', $this->schedule->id)->firstOrFail();
-        $this->travelToWib('2026-11-03 15:01:00');
+        $this->travelToWib('2026-11-03 07:16:00');
         $this->actingAs($this->security->user)
             ->post("/app/attendance/{$record2->id}/check-in", $this->validGpsPayload())
             ->assertSessionHasErrors('attendance');
         $this->assertNull($record2->refresh()->check_in_at);
+    }
+
+    public function test_check_in_tolerance_boundary_is_inclusive_and_lateness_is_from_shift_start(): void
+    {
+        AttendanceSetting::current()?->update(['late_tolerance_minutes' => 15]);
+        $this->makeContext('2026-11-02', '2026-11-06');
+
+        $cases = [
+            ['2026-11-02', '07:00:00', true, 0, 'Tepat Waktu'],
+            ['2026-11-03', '07:01:00', true, 1, 'Terlambat 1 menit'],
+            ['2026-11-04', '07:10:00', true, 10, 'Terlambat 10 menit'],
+            ['2026-11-05', '07:15:00', true, 15, 'Terlambat 15 menit'],
+            ['2026-11-06', '07:16:00', false, null, null],
+        ];
+
+        foreach ($cases as [$date, $time, $allowed, $lateMinutes, $label]) {
+            $this->schedule = $this->makeSchedule($this->shift, $date);
+            $this->generate();
+            $record = AttendanceRecord::query()->where('schedule_id', $this->schedule->id)->firstOrFail();
+            $this->travelToWib($date.' '.$time);
+
+            $response = $this->actingAs($this->security->user)
+                ->post("/app/attendance/{$record->id}/check-in", $this->validGpsPayload());
+
+            if ($allowed) {
+                $response->assertRedirect();
+                $record->refresh();
+                $this->assertSame($lateMinutes, $record->lateMinutes());
+                $this->assertSame($label, $record->lateLabel());
+                $this->assertSame(15, $record->setting_check_in_tolerance_minutes);
+            } else {
+                $response->assertSessionHasErrors('attendance');
+                $this->assertNull($record->refresh()->check_in_at);
+            }
+        }
     }
 
     public function test_check_in_cannot_be_duplicated_or_overwrite_existing(): void
@@ -614,6 +653,81 @@ class AttendanceHttpTest extends AttendanceTestCase
         $this->assertSame(0, app(AttendanceStatusEvaluator::class)->markAbsent());
         $record->refresh();
         $this->assertNotSame(AttendanceRecord::STATUS_ABSENT, $record->effectiveStatus());
+    }
+
+    public function test_overnight_shift_stays_active_until_checkout_next_day(): void
+    {
+        $this->makeContext('2026-11-27', '2026-11-28');
+        $night = $this->createShift($this->unit, 'Malam', 'M', [
+            'start_time' => '23:00:00',
+            'end_time' => '08:00:00',
+            'end_day_offset' => 1,
+        ]);
+        $day = $this->createShift($this->unit, 'Pagi Next', 'PN', [
+            'start_time' => '08:00:00',
+            'end_time' => '16:00:00',
+            'end_day_offset' => 0,
+        ]);
+        $nightSchedule = $this->makeSchedule($night, '2026-11-27');
+        $daySchedule = $this->makeSchedule($day, '2026-11-28');
+        $this->generate();
+
+        $nightRecord = AttendanceRecord::query()->where('schedule_id', $nightSchedule->id)->firstOrFail();
+
+        $this->travelToWib('2026-11-27 23:00:00');
+        $this->actingAs($this->security->user)
+            ->post("/app/attendance/{$nightRecord->id}/check-in", $this->validGpsPayload())
+            ->assertRedirect();
+
+        $this->travelToWib('2026-11-28 07:30:00');
+        $this->actingAs($this->security->user)
+            ->get('/app/attendance')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('App/Attendance/Index')
+                ->where('state', 'record_available')
+                ->where('attendance.id', $nightRecord->id)
+                ->where('attendance.work_date', '2026-11-27')
+                ->where('attendance.status_label', 'Hadir')
+                ->where('shift.name', 'Malam')
+            );
+
+        $this->travelToWib('2026-11-28 08:00:00');
+        $this->actingAs($this->security->user)
+            ->post("/app/attendance/{$nightRecord->id}/check-out", $this->validGpsPayload())
+            ->assertRedirect();
+
+        $nightRecord->refresh();
+        $this->assertSame(AttendanceRecord::STATUS_COMPLETED, $nightRecord->status);
+        $this->assertNotNull($nightRecord->check_out_at);
+
+        $dayRecord = AttendanceRecord::query()->where('schedule_id', $daySchedule->id)->firstOrFail();
+        $this->actingAs($this->security->user)
+            ->get('/app/attendance')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('attendance.id', $dayRecord->id)
+                ->where('attendance.work_date', '2026-11-28')
+                ->where('shift.name', 'Pagi Next')
+            );
+    }
+
+    public function test_lateness_snapshot_is_not_recalculated_when_setting_changes(): void
+    {
+        AttendanceSetting::current()?->update(['late_tolerance_minutes' => 15]);
+        $record = $this->generateForSchedule();
+        $this->travelToWib('2026-11-02 07:10:00');
+        $this->actingAs($this->security->user)
+            ->post("/app/attendance/{$record->id}/check-in", $this->validGpsPayload())
+            ->assertRedirect();
+
+        $record->refresh();
+        $this->assertSame(10, $record->lateMinutes());
+
+        AttendanceSetting::current()?->update(['late_tolerance_minutes' => 0]);
+        $record->refresh();
+        $this->assertSame(10, $record->lateMinutes());
+        $this->assertSame('Terlambat 10 menit', $record->lateLabel());
     }
 
     public function test_security_cannot_act_on_another_record(): void

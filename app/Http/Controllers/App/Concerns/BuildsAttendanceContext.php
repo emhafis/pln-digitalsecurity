@@ -52,20 +52,17 @@ trait BuildsAttendanceContext
             return $context;
         }
 
+        $activeRecord = $this->findActiveAttendanceRecord($security->id, $now);
         $schedule = Schedule::query()
             ->where('security_id', $security->id)
             ->whereDate('date', $operationalDate)
-            ->with([
-                'shift:id,name,code,type,start_time,end_time,end_day_offset',
-                'schedulePeriod.securityPost:id,name,unit_id,latitude,longitude',
-                'schedulePeriod.unit:id,unit_name',
-                'schedulePeriod.securityTeam:id,name,code',
-                'attendanceRecord' => fn ($query) => $query->with([
-                    'corrections' => fn ($q) => $q->where('status', AttendanceCorrection::STATUS_PENDING),
-                ]),
-            ])
+            ->with($this->scheduleRelations())
             ->orderBy('id')
             ->first();
+
+        if ($activeRecord !== null) {
+            return $this->contextFromRecord($context, $activeRecord, $now);
+        }
 
         if ($schedule === null) {
             $context['state'] = 'no_schedule';
@@ -141,12 +138,17 @@ trait BuildsAttendanceContext
             $totalMinutes = $checkIn->diffInMinutes($checkOut);
         }
 
+        $displayStatus = $record->effectiveDisplayStatus($now);
+
         return [
             'id' => $record->id,
             'schedule_id' => $record->schedule_id,
-            'status' => $status,
-            'status_label' => AttendanceRecord::statusLabel($status),
-            'is_late' => $record->isLate($checkIn ?? $now),
+            'status' => $displayStatus,
+            'raw_status' => $status,
+            'status_label' => AttendanceRecord::displayStatusLabel($displayStatus),
+            'is_late' => $record->isLate(),
+            'late_minutes' => $record->lateMinutes(),
+            'late_label' => $record->lateLabel(),
             'is_day_off' => $record->isDayOff(),
             'check_in_at' => $checkIn?->toIso8601String(),
             'check_out_at' => $checkOut?->toIso8601String(),
@@ -159,6 +161,10 @@ trait BuildsAttendanceContext
                 ? sprintf('%d jam %d menit', intdiv($totalMinutes, 60), $totalMinutes % 60)
                 : null,
             'work_date' => $record->work_date?->toDateString(),
+            'work_date_label' => $record->work_date
+                ? Carbon::parse($record->work_date->toDateString(), AttendanceClock::OPERATIONAL_TIMEZONE)
+                    ->translatedFormat('l, d F Y')
+                : null,
             'has_pending_correction' => $record->hasPendingCorrection(),
             'is_locked' => $record->isLocked(),
         ];
@@ -253,5 +259,95 @@ trait BuildsAttendanceContext
             'check_out_opens_label' => AttendanceClock::formatWib($checkOutOpensAt),
             'check_out_closes_label' => AttendanceClock::formatWib($closesAt),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function contextFromRecord(array $context, AttendanceRecord $record, Carbon $now): array
+    {
+        $schedule = $record->schedule;
+        $period = $schedule?->schedulePeriod;
+
+        $context['schedule'] = [
+            'id' => $record->schedule_id,
+            'date' => $record->work_date?->toDateString(),
+            'source' => $schedule?->source,
+        ];
+
+        $context['post'] = $record->security_post_name ? [
+            'id' => $record->security_post_id,
+            'name' => $record->security_post_name,
+            'unit_name' => $record->unit_name ?? $period?->unit?->unit_name,
+            'team_name' => $record->security_team_name ?? $period?->securityTeam?->name,
+        ] : null;
+
+        $context['attendance'] = $this->mapAttendance($record, $now);
+        $context['windows'] = $this->mapWindowsFromRecord($record);
+        $context['state'] = $record->isDayOff() ? 'day_off' : 'record_available';
+        $context['shift'] = [
+            'id' => $record->shift_id,
+            'name' => $record->shift_name,
+            'code' => $record->shift_code,
+            'type' => $record->shift_type,
+            'start_time' => $record->shift_start_time,
+            'end_time' => $record->shift_end_time,
+            'end_day_offset' => (int) $record->shift_end_day_offset,
+            'is_day_off' => $record->isDayOff(),
+        ];
+
+        return $context;
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    protected function scheduleRelations(): array
+    {
+        return [
+            'shift:id,name,code,type,start_time,end_time,end_day_offset',
+            'schedulePeriod.securityPost:id,name,unit_id,latitude,longitude',
+            'schedulePeriod.unit:id,unit_name',
+            'schedulePeriod.securityTeam:id,name,code',
+            'attendanceRecord' => fn ($query) => $query->with([
+                'corrections' => fn ($q) => $q->where('status', AttendanceCorrection::STATUS_PENDING),
+            ]),
+        ];
+    }
+
+    protected function findActiveAttendanceRecord(int $securityId, Carbon $now): ?AttendanceRecord
+    {
+        $candidates = AttendanceRecord::query()
+            ->where('security_id', $securityId)
+            ->where('shift_type', Shift::TYPE_WORKING)
+            ->where(function ($query) {
+                $query->whereNotNull('check_in_at')
+                    ->orWhereNotNull('corrected_check_in_at');
+            })
+            ->where(function ($query) {
+                $query->whereNull('check_out_at')
+                    ->whereNull('corrected_check_out_at');
+            })
+            ->whereDate('work_date', '<=', AttendanceClock::todayWib())
+            ->with([
+                'schedule.shift:id,name,code,type,start_time,end_time,end_day_offset',
+                'schedule.schedulePeriod.securityPost:id,name,unit_id,latitude,longitude',
+                'schedule.schedulePeriod.unit:id,unit_name',
+                'schedule.schedulePeriod.securityTeam:id,name,code',
+                'corrections' => fn ($q) => $q->where('status', AttendanceCorrection::STATUS_PENDING),
+            ])
+            ->orderByDesc('work_date')
+            ->orderByDesc('scheduled_start_at')
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
+        foreach ($candidates as $record) {
+            if ($record->isActiveSession($now)) {
+                return $record;
+            }
+        }
+
+        return null;
     }
 }

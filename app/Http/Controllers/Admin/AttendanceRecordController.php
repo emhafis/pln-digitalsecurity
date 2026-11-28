@@ -39,7 +39,8 @@ class AttendanceRecordController extends Controller
         $dir = $request->query('dir', 'desc') === 'asc' ? 'asc' : 'desc';
 
         $status = (string) $request->query('status', '');
-        if (! array_key_exists($status, AttendanceRecord::STATUS_LABELS)) {
+        $statusOptions = $this->statusOptions();
+        if (! array_key_exists($status, $statusOptions)) {
             $status = '';
         }
 
@@ -48,8 +49,9 @@ class AttendanceRecordController extends Controller
         $periodId = $this->queryInt($request, 'period_id');
         $dateFrom = $this->queryDate($request, 'date_from');
         $dateTo = $this->queryDate($request, 'date_to');
+        $isDefaultDateFilter = ! $request->query->has('date_from') && ! $request->query->has('date_to');
 
-        if (! $request->query->has('date_from') && ! $request->query->has('date_to')) {
+        if ($isDefaultDateFilter) {
             $today = AttendanceClock::todayWib();
             $dateFrom = $today;
             $dateTo = $today;
@@ -64,8 +66,18 @@ class AttendanceRecordController extends Controller
             ->when($postId !== null, fn ($query) => $query->where('attendance_records.security_post_id', $postId))
             ->when($periodId !== null, fn ($query) => $query->where('attendance_records.schedule_period_id', $periodId))
             ->when($status !== '', fn ($query) => $this->applyEffectiveStatusFilter($query, $status, $now))
-            ->when($dateFrom !== null, fn ($query) => $query->whereDate('attendance_records.work_date', '>=', $dateFrom))
-            ->when($dateTo !== null, fn ($query) => $query->whereDate('attendance_records.work_date', '<=', $dateTo))
+            ->when($dateFrom !== null || $dateTo !== null, function ($query) use ($dateFrom, $dateTo, $isDefaultDateFilter, $now) {
+                $query->where(function ($query) use ($dateFrom, $dateTo, $isDefaultDateFilter, $now) {
+                    $query->when($dateFrom !== null, fn ($q) => $q->whereDate('attendance_records.work_date', '>=', $dateFrom))
+                        ->when($dateTo !== null, fn ($q) => $q->whereDate('attendance_records.work_date', '<=', $dateTo));
+
+                    if ($isDefaultDateFilter) {
+                        $query->orWhere(function ($q) use ($now) {
+                            $this->applyUnresolvedOverdueCheckoutFilter($q, $now);
+                        });
+                    }
+                });
+            })
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($query) use ($search) {
                     $query->where('attendance_records.security_name', 'like', "%{$search}%")
@@ -88,7 +100,7 @@ class AttendanceRecordController extends Controller
                 'from' => $paginator->firstItem(),
                 'to' => $paginator->lastItem(),
             ],
-            'statuses' => collect(AttendanceRecord::STATUS_LABELS)
+            'statuses' => collect($statusOptions)
                 ->map(fn (string $label, string $value) => ['value' => $value, 'label' => $label])
                 ->values(),
             'units' => $this->attendanceUnits($scope),
@@ -157,7 +169,7 @@ class AttendanceRecordController extends Controller
      */
     private function listItem(AttendanceRecord $record): array
     {
-        $status = $record->effectiveStatus();
+        $status = $record->effectiveDisplayStatus();
 
         return [
             'id' => $record->id,
@@ -176,8 +188,10 @@ class AttendanceRecordController extends Controller
             'check_in' => AttendanceClock::formatWib($record->effectiveCheckInAt(), 'H:i'),
             'check_out' => AttendanceClock::formatWib($record->effectiveCheckOutAt(), 'H:i'),
             'status' => $status,
-            'status_label' => AttendanceRecord::statusLabel($status),
+            'status_label' => AttendanceRecord::displayStatusLabel($status),
             'is_late' => $record->isLate(),
+            'late_minutes' => $record->lateMinutes(),
+            'late_label' => $record->lateLabel(),
             'has_pending_correction' => $record->hasPendingCorrection(),
             'show_url' => route('admin.attendance-record.show', $record->id),
         ];
@@ -188,7 +202,7 @@ class AttendanceRecordController extends Controller
      */
     private function detailItem(AttendanceRecord $record): array
     {
-        $status = $record->effectiveStatus();
+        $status = $record->effectiveDisplayStatus();
 
         return [
             'id' => $record->id,
@@ -211,9 +225,11 @@ class AttendanceRecordController extends Controller
             'scheduled_start' => AttendanceClock::formatWib($record->scheduled_start_at),
             'scheduled_end' => AttendanceClock::formatWib($record->scheduled_end_at),
             'status' => $status,
-            'status_label' => AttendanceRecord::statusLabel($status),
+            'status_label' => AttendanceRecord::displayStatusLabel($status),
             'stored_status_label' => AttendanceRecord::statusLabel($record->status),
             'is_late' => $record->isLate(),
+            'late_minutes' => $record->lateMinutes(),
+            'late_label' => $record->lateLabel(),
             'is_locked' => $record->isLocked(),
             'snapshot_locked_at' => AttendanceClock::formatWib($record->snapshot_locked_at),
             'last_synced_at' => AttendanceClock::formatWib($record->last_synced_at),
@@ -229,6 +245,7 @@ class AttendanceRecordController extends Controller
                 'gps_radius_meters' => $record->setting_gps_radius_meters,
                 'check_in_open_minutes' => $record->setting_check_in_open_minutes,
                 'late_tolerance_minutes' => $record->setting_late_tolerance_minutes,
+                'check_in_tolerance_minutes' => $record->checkInToleranceMinutes(),
                 'early_checkout_tolerance_minutes' => $record->setting_early_checkout_tolerance_minutes,
                 'checkout_close_minutes' => $record->setting_checkout_close_minutes,
                 'max_gps_accuracy_meters' => $record->setting_max_gps_accuracy_meters,
@@ -301,42 +318,42 @@ class AttendanceRecordController extends Controller
     private function applyEffectiveStatusFilter(Builder $query, string $status, Carbon $now): void
     {
         $query->where(function (Builder $query) use ($status, $now) {
-            if (in_array($status, AttendanceRecord::CORRECTABLE_STATUSES, true)) {
-                $query->where('attendance_records.corrected_status', $status)
-                    ->orWhere(function (Builder $query) use ($status, $now) {
-                        $query->whereNull('attendance_records.corrected_status');
-                        $this->applyStoredStatusFilter($query, $status, $now);
-                    });
-
-                return;
-            }
-
-            $query->whereNull('attendance_records.corrected_status');
-            $this->applyStoredStatusFilter($query, $status, $now);
+            $query->where(function (Builder $query) use ($status, $now) {
+                $query->whereNotNull('attendance_records.corrected_status');
+                $this->applyStoredStatusFilter($query, $status, $now, 'attendance_records.corrected_status');
+            })->orWhere(function (Builder $query) use ($status, $now) {
+                $query->whereNull('attendance_records.corrected_status');
+                $this->applyStoredStatusFilter($query, $status, $now, 'attendance_records.status');
+            });
         });
     }
 
-    private function applyStoredStatusFilter(Builder $query, string $status, Carbon $now): void
+    private function applyStoredStatusFilter(Builder $query, string $status, Carbon $now, string $statusColumn): void
     {
+        $nowString = $now->format('Y-m-d H:i:s');
+        $opensAt = $this->checkInOpensAtExpression($query);
+        $absenceDeadline = $this->absenceDeadlineExpression($query);
+        $checkIn = "COALESCE(attendance_records.corrected_check_in_at, attendance_records.check_in_at)";
+        $checkOut = "COALESCE(attendance_records.corrected_check_out_at, attendance_records.check_out_at)";
+
         if ($status === AttendanceRecord::STATUS_DAY_OFF) {
-            $query->where('attendance_records.shift_type', Shift::TYPE_DAY_OFF);
+            $query->where(function (Builder $query) use ($statusColumn) {
+                $query->where($statusColumn, AttendanceRecord::STATUS_DAY_OFF)
+                    ->orWhere('attendance_records.shift_type', Shift::TYPE_DAY_OFF);
+            });
 
             return;
         }
 
-        $query->where('attendance_records.shift_type', Shift::TYPE_WORKING);
-
-        $opensAt = $this->checkInOpensAtExpression($query);
-        $absenceDeadline = $this->absenceDeadlineExpression($query);
-        $nowString = $now->format('Y-m-d H:i:s');
+        $query->where($statusColumn, '!=', AttendanceRecord::STATUS_DAY_OFF)
+            ->where('attendance_records.shift_type', Shift::TYPE_WORKING);
 
         if ($status === AttendanceRecord::STATUS_ABSENT) {
-            $query->where(function (Builder $query) use ($absenceDeadline, $nowString) {
-                $query->where('attendance_records.status', AttendanceRecord::STATUS_ABSENT)
-                    ->orWhere(function (Builder $query) use ($absenceDeadline, $nowString) {
-                        $query->where('attendance_records.status', AttendanceRecord::STATUS_SCHEDULED)
-                            ->whereNull('attendance_records.check_in_at')
-                            ->whereNull('attendance_records.corrected_check_in_at')
+            $query->where(function (Builder $query) use ($statusColumn, $checkIn, $absenceDeadline, $nowString) {
+                $query->where($statusColumn, AttendanceRecord::STATUS_ABSENT)
+                    ->orWhere(function (Builder $query) use ($statusColumn, $checkIn, $absenceDeadline, $nowString) {
+                        $query->where($statusColumn, AttendanceRecord::STATUS_SCHEDULED)
+                            ->whereRaw("{$checkIn} IS NULL")
                             ->whereNotNull('attendance_records.scheduled_end_at')
                             ->whereRaw("{$absenceDeadline} < ?", [$nowString]);
                     });
@@ -345,19 +362,43 @@ class AttendanceRecordController extends Controller
             return;
         }
 
-        if (in_array($status, AttendanceRecord::CORRECTABLE_STATUSES, true)) {
-            $query->where('attendance_records.status', $status);
+        if ($status === AttendanceRecord::STATUS_COMPLETED) {
+            $query->where(function (Builder $query) use ($statusColumn, $checkIn, $checkOut) {
+                $query->where($statusColumn, AttendanceRecord::STATUS_COMPLETED)
+                    ->orWhere(function (Builder $query) use ($checkIn, $checkOut) {
+                        $query->whereRaw("{$checkIn} IS NOT NULL")
+                            ->whereRaw("{$checkOut} IS NOT NULL");
+                    });
+            });
 
             return;
         }
 
-        $query->whereIn('attendance_records.status', [
-            AttendanceRecord::STATUS_SCHEDULED,
-            AttendanceRecord::STATUS_PENDING,
-        ])->where(function (Builder $query) use ($absenceDeadline, $nowString) {
-            $query->whereNull('attendance_records.scheduled_end_at')
-                ->orWhereRaw("{$absenceDeadline} >= ?", [$nowString]);
-        });
+        if ($status === 'overdue_checkout') {
+            $query->whereRaw("{$checkIn} IS NOT NULL")
+                ->whereRaw("{$checkOut} IS NULL")
+                ->whereNotNull('attendance_records.scheduled_end_at')
+                ->where('attendance_records.scheduled_end_at', '<', $nowString);
+
+            return;
+        }
+
+        if ($status === AttendanceRecord::STATUS_IN_PROGRESS) {
+            $query->whereRaw("{$checkIn} IS NOT NULL")
+                ->whereRaw("{$checkOut} IS NULL")
+                ->where(function (Builder $query) use ($nowString) {
+                    $query->whereNull('attendance_records.scheduled_end_at')
+                        ->orWhere('attendance_records.scheduled_end_at', '>=', $nowString);
+                });
+
+            return;
+        }
+
+        $query->whereRaw("{$checkIn} IS NULL")
+            ->where(function (Builder $query) use ($absenceDeadline, $nowString) {
+                $query->whereNull('attendance_records.scheduled_end_at')
+                    ->orWhereRaw("{$absenceDeadline} >= ?", [$nowString]);
+            });
 
         if ($status === AttendanceRecord::STATUS_PENDING) {
             $query->whereNotNull('attendance_records.scheduled_start_at')
@@ -370,6 +411,46 @@ class AttendanceRecordController extends Controller
             $query->whereNull('attendance_records.scheduled_start_at')
                 ->orWhereRaw("{$opensAt} > ?", [$nowString]);
         });
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function statusOptions(): array
+    {
+        return [
+            AttendanceRecord::STATUS_SCHEDULED => 'Belum Waktunya Absen',
+            AttendanceRecord::STATUS_PENDING => 'Belum Absen Masuk',
+            AttendanceRecord::STATUS_IN_PROGRESS => 'Hadir',
+            'overdue_checkout' => 'Belum Absen Keluar',
+            AttendanceRecord::STATUS_COMPLETED => 'Selesai',
+            AttendanceRecord::STATUS_DAY_OFF => 'Libur',
+            AttendanceRecord::STATUS_ABSENT => 'Tidak Hadir',
+        ];
+    }
+
+    private function applyUnresolvedOverdueCheckoutFilter(Builder $query, Carbon $now): void
+    {
+        $nowString = $now->format('Y-m-d H:i:s');
+        $checkIn = "COALESCE(attendance_records.corrected_check_in_at, attendance_records.check_in_at)";
+        $checkOut = "COALESCE(attendance_records.corrected_check_out_at, attendance_records.check_out_at)";
+
+        $query->where('attendance_records.shift_type', Shift::TYPE_WORKING)
+            ->whereRaw("{$checkIn} IS NOT NULL")
+            ->whereRaw("{$checkOut} IS NULL")
+            ->where(function (Builder $query) use ($nowString) {
+                $query->whereNull('attendance_records.corrected_status')
+                    ->orWhere('attendance_records.corrected_status', '!=', AttendanceRecord::STATUS_DAY_OFF);
+            })
+            ->where(function (Builder $query) use ($nowString) {
+                $query->where(function (Builder $q) use ($nowString) {
+                    $q->whereNotNull('attendance_records.scheduled_end_at')
+                        ->where('attendance_records.scheduled_end_at', '<', $nowString);
+                })->orWhere(function (Builder $q) use ($nowString) {
+                    $q->whereNotNull('attendance_records.scheduled_end_at')
+                        ->whereRaw($this->absenceDeadlineExpression($q).' < ?', [$nowString]);
+                });
+            });
     }
 
     private function checkInOpensAtExpression(Builder $query): string

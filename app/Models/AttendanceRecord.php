@@ -27,9 +27,9 @@ class AttendanceRecord extends Model
     public const STATUS_DAY_OFF = 'day_off';
 
     public const STATUS_LABELS = [
-        self::STATUS_SCHEDULED => 'Belum Waktunya',
-        self::STATUS_PENDING => 'Menunggu Check-in',
-        self::STATUS_IN_PROGRESS => 'Sedang Bertugas',
+        self::STATUS_SCHEDULED => 'Belum Waktunya Absen',
+        self::STATUS_PENDING => 'Belum Absen Masuk',
+        self::STATUS_IN_PROGRESS => 'Hadir',
         self::STATUS_COMPLETED => 'Selesai',
         self::STATUS_ABSENT => 'Tidak Hadir',
         self::STATUS_DAY_OFF => 'Libur',
@@ -72,6 +72,7 @@ class AttendanceRecord extends Model
         'setting_gps_radius_meters',
         'setting_check_in_open_minutes',
         'setting_late_tolerance_minutes',
+        'setting_check_in_tolerance_minutes',
         'setting_early_checkout_tolerance_minutes',
         'setting_checkout_close_minutes',
         'setting_max_gps_accuracy_meters',
@@ -82,6 +83,7 @@ class AttendanceRecord extends Model
         'check_in_accuracy_meters',
         'check_in_distance_meters',
         'check_in_geofence_valid',
+        'check_in_late_minutes',
         'check_out_at',
         'check_out_captured_at',
         'check_out_latitude',
@@ -115,6 +117,7 @@ class AttendanceRecord extends Model
         'setting_gps_radius_meters' => 'integer',
         'setting_check_in_open_minutes' => 'integer',
         'setting_late_tolerance_minutes' => 'integer',
+        'setting_check_in_tolerance_minutes' => 'integer',
         'setting_early_checkout_tolerance_minutes' => 'integer',
         'setting_checkout_close_minutes' => 'integer',
         'setting_max_gps_accuracy_meters' => 'integer',
@@ -125,6 +128,7 @@ class AttendanceRecord extends Model
         'check_in_accuracy_meters' => 'float',
         'check_in_distance_meters' => 'float',
         'check_in_geofence_valid' => 'boolean',
+        'check_in_late_minutes' => 'integer',
         'check_out_latitude' => 'float',
         'check_out_longitude' => 'float',
         'check_out_accuracy_meters' => 'float',
@@ -291,27 +295,126 @@ class AttendanceRecord extends Model
         return $deadline !== null && $now->greaterThan($deadline);
     }
 
-    public function effectiveStatusLabel(?Carbon $now = null): string
+    public function effectiveDisplayStatus(?Carbon $now = null): string
     {
-        $status = $this->effectiveStatus($now);
+        $now ??= AttendanceClock::nowUtc();
 
-        return self::STATUS_LABELS[$status] ?? $status;
+        if ($this->isDayOff()) {
+            return self::STATUS_DAY_OFF;
+        }
+
+        $checkIn = $this->effectiveCheckInAt();
+        $checkOut = $this->effectiveCheckOutAt();
+
+        if ($checkIn !== null && $checkOut !== null) {
+            return self::STATUS_COMPLETED;
+        }
+
+        if ($checkIn !== null) {
+            return $this->isCheckoutOverdue($now) ? 'overdue_checkout' : self::STATUS_IN_PROGRESS;
+        }
+
+        $effective = $this->effectiveStatus($now);
+
+        if ($effective === self::STATUS_ABSENT) {
+            return self::STATUS_ABSENT;
+        }
+
+        if ($effective === self::STATUS_PENDING) {
+            return self::STATUS_PENDING;
+        }
+
+        return self::STATUS_SCHEDULED;
     }
 
-    public function isLate(?Carbon $at = null): bool
+    public static function displayStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'overdue_checkout' => 'Belum Absen Keluar',
+            default => self::statusLabel($status),
+        };
+    }
+
+    public function checkInDeadlineAt(): ?Carbon
+    {
+        if ($this->scheduled_start_at === null) {
+            return null;
+        }
+
+        return $this->scheduled_start_at->copy()
+            ->addMinutes($this->checkInToleranceMinutes());
+    }
+
+    public function checkInToleranceMinutes(): int
+    {
+        $snapshot = $this->setting_check_in_tolerance_minutes;
+
+        if ($snapshot === null) {
+            $snapshot = $this->setting_late_tolerance_minutes;
+        }
+
+        return max(0, (int) $snapshot);
+    }
+
+    public function lateMinutes(): int
     {
         $checkIn = $this->effectiveCheckInAt();
 
         if ($checkIn === null || $this->scheduled_start_at === null) {
-            return false;
+            return 0;
         }
 
-        $at ??= $checkIn;
+        if ($this->check_in_late_minutes !== null
+            && $this->corrected_check_in_at === null
+            && $this->check_in_at !== null
+            && $checkIn->equalTo($this->check_in_at)) {
+            return max(0, (int) $this->check_in_late_minutes);
+        }
 
-        $limit = $this->scheduled_start_at->copy()
-            ->addMinutes((int) $this->setting_late_tolerance_minutes);
+        return max(0, $this->scheduled_start_at->diffInMinutes($checkIn, false));
+    }
 
-        return $at->greaterThan($limit);
+    public function isLate(): bool
+    {
+        return $this->lateMinutes() > 0;
+    }
+
+    public function lateLabel(): ?string
+    {
+        $checkIn = $this->effectiveCheckInAt();
+
+        if ($checkIn === null || ! $this->isWorking()) {
+            return null;
+        }
+
+        $minutes = $this->lateMinutes();
+
+        return $minutes > 0 ? 'Terlambat '.$minutes.' menit' : 'Tepat Waktu';
+    }
+
+    public function isCheckoutOverdue(?Carbon $now = null): bool
+    {
+        $now ??= AttendanceClock::nowUtc();
+
+        return $this->isWorking()
+            && $this->effectiveCheckInAt() !== null
+            && $this->effectiveCheckOutAt() === null
+            && $this->scheduled_end_at !== null
+            && $now->greaterThan($this->scheduled_end_at);
+    }
+
+    public function isActiveSession(?Carbon $now = null): bool
+    {
+        $now ??= AttendanceClock::nowUtc();
+
+        return $this->isWorking()
+            && $this->effectiveCheckInAt() !== null
+            && $this->effectiveCheckOutAt() === null;
+    }
+
+    public function effectiveStatusLabel(?Carbon $now = null): string
+    {
+        return self::displayStatusLabel($this->effectiveDisplayStatus($now));
     }
 
     /**
