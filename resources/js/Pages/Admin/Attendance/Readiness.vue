@@ -35,7 +35,7 @@ const globalSettings = computed(() => props.report.global.settings);
 const settingLabels = {
     gps_radius_meters: 'Radius Lokasi (meter)',
     check_in_open_minutes: 'Check-in Dibuka (menit sebelum shift)',
-    late_tolerance_minutes: 'Toleransi Keterlambatan (menit)',
+    late_tolerance_minutes: 'Toleransi Waktu Absen Masuk (menit)',
     early_checkout_tolerance_minutes: 'Toleransi Check-out Awal (menit)',
     checkout_close_minutes: 'Check-out Ditutup (menit setelah shift)',
     max_gps_accuracy_meters: 'Akurasi Lokasi Maksimal (meter)',

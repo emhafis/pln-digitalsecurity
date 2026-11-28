@@ -43,7 +43,8 @@ class AttendanceController extends Controller
         }
 
         $status = (string) $request->query('status', '');
-        if (! array_key_exists($status, AttendanceRecord::STATUS_LABELS)) {
+        $statusOptions = $this->statusOptions();
+        if (! array_key_exists($status, $statusOptions)) {
             $status = '';
         }
 
@@ -51,7 +52,7 @@ class AttendanceController extends Controller
             ->where('user_id', $request->user()->id)
             ->first();
 
-        $statuses = collect(AttendanceRecord::STATUS_LABELS)
+        $statuses = collect($statusOptions)
             ->map(fn (string $label, string $value) => ['value' => $value, 'label' => $label])
             ->values();
 
@@ -82,7 +83,7 @@ class AttendanceController extends Controller
             ->orderByDesc('id')
             ->get()
             ->map(function (AttendanceRecord $record) use ($nowUtc) {
-                $effectiveStatus = $record->effectiveStatus($nowUtc);
+                $effectiveStatus = $record->effectiveDisplayStatus($nowUtc);
                 $checkIn = $record->effectiveCheckInAt();
                 $checkOut = $record->effectiveCheckOutAt();
                 $totalMinutes = ($checkIn && $checkOut) ? $checkIn->diffInMinutes($checkOut) : null;
@@ -113,8 +114,10 @@ class AttendanceController extends Controller
                     'check_in_label' => AttendanceClock::formatWib($checkIn, 'H:i'),
                     'check_out_label' => AttendanceClock::formatWib($checkOut, 'H:i'),
                     'status' => $effectiveStatus,
-                    'status_label' => AttendanceRecord::statusLabel($effectiveStatus),
-                    'is_late' => $record->isLate($checkIn ?? $nowUtc),
+                    'status_label' => AttendanceRecord::displayStatusLabel($effectiveStatus),
+                    'is_late' => $record->isLate(),
+                    'late_minutes' => $record->lateMinutes(),
+                    'late_label' => $record->lateLabel(),
                     'total_work_minutes' => $totalMinutes,
                     'total_work_label' => $totalMinutes !== null
                         ? sprintf('%d jam %d menit', intdiv($totalMinutes, 60), $totalMinutes % 60)
@@ -181,7 +184,7 @@ class AttendanceController extends Controller
             ->get();
 
         $records = $candidates->map(function (AttendanceRecord $record) use ($nowUtc) {
-            $effectiveStatus = $record->effectiveStatus($nowUtc);
+            $effectiveStatus = $record->effectiveDisplayStatus($nowUtc);
             $checkIn = $record->effectiveCheckInAt();
             $checkOut = $record->effectiveCheckOutAt();
             $pending = $record->corrections->firstWhere('status', AttendanceCorrection::STATUS_PENDING) !== null;
@@ -199,7 +202,7 @@ class AttendanceController extends Controller
                 'post_name' => $record->security_post_name,
                 'unit_name' => $record->unit_name,
                 'status' => $effectiveStatus,
-                'status_label' => AttendanceRecord::statusLabel($effectiveStatus),
+                'status_label' => AttendanceRecord::displayStatusLabel($effectiveStatus),
                 'check_in_label' => AttendanceClock::formatWib($checkIn, 'H:i'),
                 'check_out_label' => AttendanceClock::formatWib($checkOut, 'H:i'),
                 'check_in_time' => AttendanceClock::formatWib($checkIn, 'H:i'),
@@ -351,44 +354,87 @@ class AttendanceController extends Controller
     private function applyEffectiveStatusFilter(Builder $query, string $status, Carbon $now): void
     {
         $query->where(function (Builder $query) use ($status, $now) {
-            if (in_array($status, AttendanceRecord::CORRECTABLE_STATUSES, true)) {
-                $query->where('attendance_records.corrected_status', $status)
-                    ->orWhere(function (Builder $query) use ($status, $now) {
-                        $query->whereNull('attendance_records.corrected_status');
-                        $this->applyStoredStatusFilter($query, $status, $now);
-                    });
-
-                return;
-            }
-
-            $query->whereNull('attendance_records.corrected_status');
-            $this->applyStoredStatusFilter($query, $status, $now);
+            $query->where(function (Builder $query) use ($status, $now) {
+                $query->whereNotNull('attendance_records.corrected_status');
+                $this->applyStoredStatusFilter($query, $status, $now, 'attendance_records.corrected_status');
+            })->orWhere(function (Builder $query) use ($status, $now) {
+                $query->whereNull('attendance_records.corrected_status');
+                $this->applyStoredStatusFilter($query, $status, $now, 'attendance_records.status');
+            });
         });
     }
 
-    private function applyStoredStatusFilter(Builder $query, string $status, Carbon $now): void
+    private function applyStoredStatusFilter(Builder $query, string $status, Carbon $now, string $statusColumn): void
     {
-        if ($status === AttendanceRecord::STATUS_DAY_OFF) {
-            $query->where('attendance_records.shift_type', Shift::TYPE_DAY_OFF);
-
-            return;
-        }
-
-        $query->where('attendance_records.shift_type', '!=', Shift::TYPE_DAY_OFF);
-
-        if (in_array($status, AttendanceRecord::CORRECTABLE_STATUSES, true)) {
-            $query->where('attendance_records.status', $status);
-
-            return;
-        }
-
-        $query->whereIn('attendance_records.status', [
-            AttendanceRecord::STATUS_SCHEDULED,
-            AttendanceRecord::STATUS_PENDING,
-        ]);
-
-        $opensAt = $this->checkInOpensAtExpression($query);
         $nowString = $now->format('Y-m-d H:i:s');
+        $opensAt = $this->checkInOpensAtExpression($query);
+        $absenceDeadline = $this->absenceDeadlineExpression($query);
+        $checkIn = "COALESCE(attendance_records.corrected_check_in_at, attendance_records.check_in_at)";
+        $checkOut = "COALESCE(attendance_records.corrected_check_out_at, attendance_records.check_out_at)";
+
+        if ($status === AttendanceRecord::STATUS_DAY_OFF) {
+            $query->where(function (Builder $query) use ($statusColumn) {
+                $query->where($statusColumn, AttendanceRecord::STATUS_DAY_OFF)
+                    ->orWhere('attendance_records.shift_type', Shift::TYPE_DAY_OFF);
+            });
+
+            return;
+        }
+
+        $query->where($statusColumn, '!=', AttendanceRecord::STATUS_DAY_OFF)
+            ->where('attendance_records.shift_type', Shift::TYPE_WORKING);
+
+        if ($status === AttendanceRecord::STATUS_ABSENT) {
+            $query->where(function (Builder $query) use ($statusColumn, $checkIn, $absenceDeadline, $nowString) {
+                $query->where($statusColumn, AttendanceRecord::STATUS_ABSENT)
+                    ->orWhere(function (Builder $query) use ($statusColumn, $checkIn, $absenceDeadline, $nowString) {
+                        $query->where($statusColumn, AttendanceRecord::STATUS_SCHEDULED)
+                            ->whereRaw("{$checkIn} IS NULL")
+                            ->whereNotNull('attendance_records.scheduled_end_at')
+                            ->whereRaw("{$absenceDeadline} < ?", [$nowString]);
+                    });
+            });
+
+            return;
+        }
+
+        if ($status === AttendanceRecord::STATUS_COMPLETED) {
+            $query->where(function (Builder $query) use ($statusColumn, $checkIn, $checkOut) {
+                $query->where($statusColumn, AttendanceRecord::STATUS_COMPLETED)
+                    ->orWhere(function (Builder $query) use ($checkIn, $checkOut) {
+                        $query->whereRaw("{$checkIn} IS NOT NULL")
+                            ->whereRaw("{$checkOut} IS NOT NULL");
+                    });
+            });
+
+            return;
+        }
+
+        if ($status === 'overdue_checkout') {
+            $query->whereRaw("{$checkIn} IS NOT NULL")
+                ->whereRaw("{$checkOut} IS NULL")
+                ->whereNotNull('attendance_records.scheduled_end_at')
+                ->where('attendance_records.scheduled_end_at', '<', $nowString);
+
+            return;
+        }
+
+        if ($status === AttendanceRecord::STATUS_IN_PROGRESS) {
+            $query->whereRaw("{$checkIn} IS NOT NULL")
+                ->whereRaw("{$checkOut} IS NULL")
+                ->where(function (Builder $query) use ($nowString) {
+                    $query->whereNull('attendance_records.scheduled_end_at')
+                        ->orWhere('attendance_records.scheduled_end_at', '>=', $nowString);
+                });
+
+            return;
+        }
+
+        $query->whereRaw("{$checkIn} IS NULL")
+            ->where(function (Builder $query) use ($absenceDeadline, $nowString) {
+                $query->whereNull('attendance_records.scheduled_end_at')
+                    ->orWhereRaw("{$absenceDeadline} >= ?", [$nowString]);
+            });
 
         if ($status === AttendanceRecord::STATUS_PENDING) {
             $query->whereNotNull('attendance_records.scheduled_start_at')
@@ -401,6 +447,31 @@ class AttendanceController extends Controller
             $query->whereNull('attendance_records.scheduled_start_at')
                 ->orWhereRaw("{$opensAt} > ?", [$nowString]);
         });
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function statusOptions(): array
+    {
+        return [
+            AttendanceRecord::STATUS_SCHEDULED => 'Belum Waktunya Absen',
+            AttendanceRecord::STATUS_PENDING => 'Belum Absen Masuk',
+            AttendanceRecord::STATUS_IN_PROGRESS => 'Hadir',
+            'overdue_checkout' => 'Belum Absen Keluar',
+            AttendanceRecord::STATUS_COMPLETED => 'Selesai',
+            AttendanceRecord::STATUS_DAY_OFF => 'Libur',
+            AttendanceRecord::STATUS_ABSENT => 'Tidak Hadir',
+        ];
+    }
+
+    private function absenceDeadlineExpression(Builder $query): string
+    {
+        if ($query->getConnection()->getDriverName() === 'sqlite') {
+            return "datetime(attendance_records.scheduled_end_at, '+24 hours')";
+        }
+
+        return 'DATE_ADD(attendance_records.scheduled_end_at, INTERVAL 24 HOUR)';
     }
 
     private function checkInOpensAtExpression(Builder $query): string

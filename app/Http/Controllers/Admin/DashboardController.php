@@ -319,7 +319,7 @@ class DashboardController extends Controller
         ];
 
         foreach ($records as $record) {
-            $effective = $record->effectiveStatus();
+            $displayStatus = $record->effectiveDisplayStatus();
             $isWorking = $record->isWorking();
 
             if ($isWorking) {
@@ -328,19 +328,19 @@ class DashboardController extends Controller
                 $summary['day_off']++;
             }
 
-            if (isset($summary[$effective])) {
-                $summary[$effective]++;
+            $bucket = $displayStatus === 'overdue_checkout' ? AttendanceRecord::STATUS_IN_PROGRESS : $displayStatus;
+            if (isset($summary[$bucket])) {
+                $summary[$bucket]++;
             }
 
             $checkIn = $record->effectiveCheckInAt();
             if ($isWorking) {
                 if ($checkIn !== null) {
                     $summary['checked_in']++;
-                    if ($record->isLate($checkIn)) {
+                    if ($record->isLate()) {
                         $summary['late']++;
                     }
-                } elseif (in_array($effective, [AttendanceRecord::STATUS_SCHEDULED, AttendanceRecord::STATUS_PENDING], true)) {
-                    // working records without check-in that are still scheduled/pending (not concluded as absent)
+                } elseif (in_array($displayStatus, [AttendanceRecord::STATUS_SCHEDULED, AttendanceRecord::STATUS_PENDING], true)) {
                     $summary['not_checked_in']++;
                 }
             }
@@ -351,7 +351,7 @@ class DashboardController extends Controller
             ->sortByDesc(fn (AttendanceRecord $r) => $r->effectiveCheckOutAt()?->timestamp ?? $r->effectiveCheckInAt()?->timestamp ?? 0)
             ->take(6)
             ->map(function (AttendanceRecord $record) {
-                $status = $record->effectiveStatus();
+                $status = $record->effectiveDisplayStatus();
 
                 return [
                     'id' => $record->id,
@@ -363,8 +363,9 @@ class DashboardController extends Controller
                     'check_in' => AttendanceClock::formatWib($record->effectiveCheckInAt(), 'H:i'),
                     'check_out' => AttendanceClock::formatWib($record->effectiveCheckOutAt(), 'H:i'),
                     'status' => $status,
-                    'status_label' => AttendanceRecord::statusLabel($status),
+                    'status_label' => AttendanceRecord::displayStatusLabel($status),
                     'is_late' => $record->isLate(),
+                    'late_label' => $record->lateLabel(),
                 ];
             })
             ->values()

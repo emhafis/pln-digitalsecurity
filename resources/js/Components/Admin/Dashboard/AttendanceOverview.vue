@@ -25,7 +25,7 @@ const stats = computed(() => [
 function statusVariant(status) {
     if (status === 'completed') return 'emerald';
     if (status === 'in_progress') return 'blue';
-    if (status === 'pending' || status === 'scheduled') return 'amber';
+    if (status === 'pending' || status === 'scheduled' || status === 'overdue_checkout') return 'amber';
     if (status === 'absent') return 'red';
     return 'gray';
 }
@@ -121,10 +121,11 @@ function statusVariant(status) {
                                     </Badge>
 
                                     <span
-                                        v-if="row.is_late"
-                                        class="text-[10px] font-medium text-[#B77932]"
+                                        v-if="row.late_label"
+                                        class="text-[10px] font-medium"
+                                        :class="row.is_late ? 'text-[#B77932]' : 'text-emerald-600'"
                                     >
-                                        Terlambat
+                                        {{ row.late_label }}
                                     </span>
                                 </div>
                             </td>

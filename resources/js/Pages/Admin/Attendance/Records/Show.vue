@@ -16,6 +16,7 @@ const statusVariants = {
     scheduled: 'gray',
     pending: 'amber',
     in_progress: 'blue',
+    overdue_checkout: 'amber',
     completed: 'emerald',
     absent: 'red',
     day_off: 'gray',
@@ -67,9 +68,9 @@ function coordinate(value) {
                             </div>
                             <div>
                                 <dt class="text-xs text-gray-500">Status</dt>
-                                <dd class="mt-1">
+                                <dd class="mt-1 flex flex-wrap gap-1">
                                     <Badge :variant="statusVariants[record.status] ?? 'gray'">{{ record.status_label }}</Badge>
-                                    <Badge v-if="record.is_late" variant="red" class="ml-1">Terlambat</Badge>
+                                    <Badge v-if="record.late_label" :variant="record.is_late ? 'red' : 'emerald'">{{ record.late_label }}</Badge>
                                 </dd>
                             </div>
                             <div>
@@ -210,7 +211,7 @@ function coordinate(value) {
                         <dl class="space-y-2 text-xs text-gray-600">
                             <div class="flex justify-between gap-2"><dt>Radius Lokasi</dt><dd>{{ record.settings.gps_radius_meters }} m</dd></div>
                             <div class="flex justify-between gap-2"><dt>Check-in Dibuka</dt><dd>{{ record.settings.check_in_open_minutes }} menit</dd></div>
-                            <div class="flex justify-between gap-2"><dt>Toleransi Keterlambatan</dt><dd>{{ record.settings.late_tolerance_minutes }} menit</dd></div>
+                            <div class="flex justify-between gap-2"><dt>Toleransi Absen Masuk</dt><dd>{{ record.settings.check_in_tolerance_minutes ?? record.settings.late_tolerance_minutes }} menit</dd></div>
                             <div class="flex justify-between gap-2"><dt>Toleransi Check-out Awal</dt><dd>{{ record.settings.early_checkout_tolerance_minutes }} menit</dd></div>
                             <div class="flex justify-between gap-2"><dt>Check-out Ditutup</dt><dd>{{ record.settings.checkout_close_minutes }} menit</dd></div>
                             <div class="flex justify-between gap-2"><dt>Akurasi Lokasi Maksimal</dt><dd>{{ record.settings.max_gps_accuracy_meters }} m</dd></div>
